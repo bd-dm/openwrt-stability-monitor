@@ -1,0 +1,120 @@
+name: Build OpenWrt APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      openwrt_version:
+        description: OpenWrt release version
+        required: true
+        default: 25.12.4
+      target:
+        description: OpenWrt target platform
+        required: true
+        default: rockchip
+      subtarget:
+        description: OpenWrt subtarget
+        required: true
+        default: armv8
+
+jobs:
+  build-apk:
+    name: Build luci-app-wanping for rockchip/armv8
+    runs-on: ubuntu-24.04
+
+    env:
+      PACKAGE_NAME: luci-app-wanping
+      OPENWRT_VERSION: ${{ github.event.inputs.openwrt_version || '25.12.4' }}
+      OPENWRT_TARGET: ${{ github.event.inputs.target || 'rockchip' }}
+      OPENWRT_SUBTARGET: ${{ github.event.inputs.subtarget || 'armv8' }}
+
+    steps:
+      - name: Checkout package
+        uses: actions/checkout@v4
+
+      - name: Install SDK build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gcc-multilib \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            rsync \
+            swig \
+            unzip \
+            wget \
+            zstd \
+            zlib1g-dev
+
+      - name: Download OpenWrt SDK
+        run: |
+          set -eux
+
+          base_url="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+          sdk_archive="$(
+            wget -qO- "${base_url}/" \
+              | grep -oE 'openwrt-sdk-[^"]+\.tar\.(xz|zst)' \
+              | head -n 1
+          )"
+
+          if [ -z "${sdk_archive}" ]; then
+            echo "No SDK archive found at ${base_url}/"
+            exit 1
+          fi
+
+          wget -O "openwrt-sdk.tar.${sdk_archive##*.}" "${base_url}/${sdk_archive}"
+
+          mkdir openwrt-sdk
+          tar --strip-components=1 -xf "openwrt-sdk.tar.${sdk_archive##*.}" -C openwrt-sdk
+
+      - name: Install OpenWrt feeds
+        working-directory: openwrt-sdk
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add package to SDK
+        run: |
+          mkdir -p "openwrt-sdk/package/${PACKAGE_NAME}"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='openwrt-sdk' \
+            ./ "openwrt-sdk/package/${PACKAGE_NAME}/"
+
+      - name: Configure package
+        working-directory: openwrt-sdk
+        run: |
+          echo "CONFIG_PACKAGE_${PACKAGE_NAME}=m" >> .config
+          make defconfig
+
+      - name: Build package
+        working-directory: openwrt-sdk
+        run: make "package/${PACKAGE_NAME}/compile" V=s -j"$(nproc)"
+
+      - name: Collect APK artifacts
+        run: |
+          mkdir -p artifacts
+          find openwrt-sdk/bin -type f -name "${PACKAGE_NAME}_*.apk" -print -exec cp {} artifacts/ \;
+          test -n "$(find artifacts -type f -name '*.apk' -print -quit)"
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}-${{ env.OPENWRT_VERSION }}
+          path: artifacts/*.apk
+          if-no-files-found: error
