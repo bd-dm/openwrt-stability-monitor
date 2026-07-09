@@ -1,0 +1,72 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+APP="wanping"
+SECTION="monitor"
+DEFAULT_STORE="/etc/wanping"
+RUNTIME_DIR="/var/run/wanping"
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+cfg_get() {
+	local value
+	config_get value "$SECTION" "$1" "$2"
+	printf '%s' "$value"
+}
+
+storage_path() {
+	config_load "$APP"
+	cfg_get storage_path "$DEFAULT_STORE"
+}
+
+emit_file_array() {
+	local file="$1"
+	local limit="$2"
+	local first=1
+
+	printf '['
+	[ -f "$file" ] && tail -n "$limit" "$file" | while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		if [ "$first" = 1 ]; then
+			first=0
+		else
+			printf ','
+		fi
+		printf '%s' "$line"
+	done
+	printf ']'
+}
+
+emit_json() {
+	local path status_file bucket_file outage_file status
+
+	path="$(storage_path)"
+	status_file="$RUNTIME_DIR/status.json"
+	bucket_file="$path/minute-buckets.jsonl"
+	outage_file="$path/outages.jsonl"
+
+	if [ -f "$status_file" ]; then
+		status="$(cat "$status_file")"
+	else
+		status='{"state":"stopped","current_latency_ms":null,"recent_loss_percent":0,"total_probes":0,"total_failures":0,"outage_count":0,"longest_outage":0,"total_downtime":0}'
+	fi
+
+	printf '{"status":%s,"buckets":' "$status"
+	emit_file_array "$bucket_file" 43200
+	printf ',"outages":'
+	emit_file_array "$outage_file" 100
+	printf '}\n'
+}
+
+case "$1" in
+	json|"")
+		emit_json
+		;;
+	*)
+		echo "usage: wanping-status json" >&2
+		exit 1
+		;;
+esac

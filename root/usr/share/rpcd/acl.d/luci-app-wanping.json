@@ -1,0 +1,14 @@
+{
+	"luci-app-wanping": {
+		"description": "Grant access to WAN ping monitor",
+		"read": {
+			"file": {
+				"/usr/sbin/wanping-status": [ "exec" ]
+			},
+			"uci": [ "wanping" ]
+		},
+		"write": {
+			"uci": [ "wanping" ]
+		}
+	}
+}

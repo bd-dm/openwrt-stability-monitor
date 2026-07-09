@@ -1,0 +1,324 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/network.sh
+
+APP="wanping"
+SECTION="monitor"
+DEFAULT_STORE="/etc/wanping"
+RUNTIME_DIR="/var/run/wanping"
+
+log() {
+	logger -t "$APP" "$*"
+}
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+now() {
+	date +%s
+}
+
+iso_time() {
+	date '+%Y-%m-%dT%H:%M:%S%z'
+}
+
+epoch_iso_time() {
+	local epoch="$1"
+	date -d "@$epoch" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date -r "$epoch" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || printf '%s' "$epoch"
+}
+
+cfg_get() {
+	local value
+	config_get value "$SECTION" "$1" "$2"
+	printf '%s' "$value"
+}
+
+load_settings() {
+	config_load "$APP"
+
+	interface="$(cfg_get interface wan)"
+	targets="$(cfg_get targets '1.1.1.1 8.8.8.8')"
+	interval="$(cfg_get interval 1)"
+	timeout="$(cfg_get timeout 1)"
+	fail_threshold="$(cfg_get fail_threshold 3)"
+	recovery_threshold="$(cfg_get recovery_threshold 3)"
+	retention_days="$(cfg_get retention_days 30)"
+	storage_path="$(cfg_get storage_path "$DEFAULT_STORE")"
+	flush_seconds="$(cfg_get flush_seconds 60)"
+
+	[ "$interval" -lt 1 ] 2>/dev/null || interval=1
+	[ "$timeout" -lt 1 ] 2>/dev/null || timeout=1
+	[ "$fail_threshold" -lt 1 ] 2>/dev/null || fail_threshold=3
+	[ "$recovery_threshold" -lt 1 ] 2>/dev/null || recovery_threshold=3
+	[ "$retention_days" -lt 1 ] 2>/dev/null || retention_days=30
+	[ "$flush_seconds" -lt 10 ] 2>/dev/null || flush_seconds=60
+
+	status_file="$RUNTIME_DIR/status.json"
+	bucket_file="$storage_path/minute-buckets.jsonl"
+	outage_file="$storage_path/outages.jsonl"
+	pid_file="$RUNTIME_DIR/monitor.pid"
+
+	mkdir -p "$storage_path"
+	mkdir -p "$RUNTIME_DIR"
+}
+
+resolve_device() {
+	device=""
+
+	network_flush_cache
+	network_get_device device "$interface"
+
+	if [ -z "$device" ]; then
+		device="$interface"
+	fi
+}
+
+ping_once() {
+	local target="$1"
+	local output rtt
+
+	output="$(ping -4 -I "$device" -c 1 -W "$timeout" "$target" 2>/dev/null)"
+	if [ $? -ne 0 ]; then
+		return 1
+	fi
+
+	rtt="$(printf '%s\n' "$output" | sed -n 's/.*time=\([0-9.][0-9.]*\).*/\1/p' | head -n 1)"
+	[ -n "$rtt" ] || return 1
+	last_latency="$rtt"
+	return 0
+}
+
+write_status() {
+	local tmp="$status_file.$$"
+	local ts iso outage_json last_start last_end
+
+	ts="$(now)"
+	iso="$(iso_time)"
+	last_start=""
+	last_end=""
+	outage_json="null"
+
+	if [ -n "$last_outage_start" ]; then
+		last_start="$(epoch_iso_time "$last_outage_start")"
+		last_end="$(epoch_iso_time "$last_outage_end")"
+		outage_json="{\"start\":$last_outage_start,\"end\":$last_outage_end,\"duration\":$last_outage_duration,\"start_iso\":\"$(json_escape "$last_start")\",\"end_iso\":\"$(json_escape "$last_end")\"}"
+	fi
+
+	cat > "$tmp" <<EOF
+{
+  "timestamp": $ts,
+  "timestamp_iso": "$(json_escape "$iso")",
+  "interface": "$(json_escape "$interface")",
+  "device": "$(json_escape "$device")",
+  "targets": "$(json_escape "$targets")",
+  "state": "$state",
+  "current_latency_ms": ${current_latency:-null},
+  "recent_loss_percent": $recent_loss,
+  "total_probes": $total_probes,
+  "total_failures": $total_failures,
+  "outage_count": $outage_count,
+  "longest_outage": $longest_outage,
+  "total_downtime": $total_downtime,
+  "last_outage": $outage_json,
+  "consecutive_failures": $consecutive_failures,
+  "consecutive_successes": $consecutive_successes
+}
+EOF
+	mv "$tmp" "$status_file"
+}
+
+flush_bucket() {
+	local tmp_start avg min_json max_json loss
+
+	[ "$bucket_probes" -gt 0 ] || return 0
+
+	tmp_start="$bucket_start"
+	avg="null"
+	min_json="null"
+	max_json="null"
+	loss=0
+
+	if [ "$bucket_successes" -gt 0 ]; then
+		avg="$(awk -v sum="$bucket_latency_sum" -v n="$bucket_successes" 'BEGIN { printf "%.3f", sum / n }')"
+		min_json="$bucket_min"
+		max_json="$bucket_max"
+	fi
+
+	loss="$(awk -v fail="$bucket_failures" -v total="$bucket_probes" 'BEGIN { printf "%.2f", (fail * 100) / total }')"
+
+	printf '{"start":%s,"end":%s,"interface":"%s","device":"%s","probes":%s,"successes":%s,"failures":%s,"loss_percent":%s,"avg_latency_ms":%s,"min_latency_ms":%s,"max_latency_ms":%s,"outages":%s,"downtime":%s}\n' \
+		"$tmp_start" "$(now)" "$(json_escape "$interface")" "$(json_escape "$device")" \
+		"$bucket_probes" "$bucket_successes" "$bucket_failures" "$loss" \
+		"$avg" "$min_json" "$max_json" "$bucket_outages" "$bucket_downtime" >> "$bucket_file"
+
+	bucket_start="$(now)"
+	bucket_probes=0
+	bucket_successes=0
+	bucket_failures=0
+	bucket_latency_sum=0
+	bucket_min=""
+	bucket_max=""
+	bucket_outages=0
+	bucket_downtime=0
+}
+
+record_outage() {
+	local start="$1"
+	local end="$2"
+	local duration="$3"
+	local start_iso end_iso
+
+	start_iso="$(epoch_iso_time "$start")"
+	end_iso="$(epoch_iso_time "$end")"
+
+	printf '{"start":%s,"end":%s,"duration":%s,"start_iso":"%s","end_iso":"%s","interface":"%s","device":"%s"}\n' \
+		"$start" "$end" "$duration" "$(json_escape "$start_iso")" "$(json_escape "$end_iso")" \
+		"$(json_escape "$interface")" "$(json_escape "$device")" >> "$outage_file"
+}
+
+prune_storage() {
+	local cutoff tmp
+
+	cutoff=$(( $(now) - retention_days * 86400 ))
+
+	for file in "$bucket_file" "$outage_file"; do
+		[ -f "$file" ] || continue
+		tmp="$file.$$"
+		awk -v cutoff="$cutoff" '
+			{
+				start = $0
+				sub(/^.*"start":/, "", start)
+				sub(/[^0-9].*$/, "", start)
+				if (start >= cutoff) print
+			}
+		' "$file" > "$tmp" && mv "$tmp" "$file"
+	done
+}
+
+handle_result() {
+	local ok="$1"
+	local ts duration
+
+	ts="$(now)"
+	total_probes=$((total_probes + 1))
+	bucket_probes=$((bucket_probes + 1))
+
+	if [ "$ok" = 1 ]; then
+		consecutive_successes=$((consecutive_successes + 1))
+		consecutive_failures=0
+		bucket_successes=$((bucket_successes + 1))
+		current_latency="$last_latency"
+		bucket_latency_sum="$(awk -v sum="$bucket_latency_sum" -v rtt="$last_latency" 'BEGIN { printf "%.3f", sum + rtt }')"
+
+		if [ -z "$bucket_min" ] || awk -v a="$last_latency" -v b="$bucket_min" 'BEGIN { exit !(a < b) }'; then
+			bucket_min="$last_latency"
+		fi
+		if [ -z "$bucket_max" ] || awk -v a="$last_latency" -v b="$bucket_max" 'BEGIN { exit !(a > b) }'; then
+			bucket_max="$last_latency"
+		fi
+
+		if [ "$state" = "offline" ] && [ "$consecutive_successes" -ge "$recovery_threshold" ]; then
+			state="online"
+			outage_end="$ts"
+			duration=$((outage_end - outage_start))
+			last_outage_start="$outage_start"
+			last_outage_end="$outage_end"
+			last_outage_duration="$duration"
+			outage_count=$((outage_count + 1))
+			bucket_outages=$((bucket_outages + 1))
+			total_downtime=$((total_downtime + duration))
+			bucket_downtime=$((bucket_downtime + duration))
+			[ "$duration" -gt "$longest_outage" ] && longest_outage="$duration"
+			record_outage "$outage_start" "$outage_end" "$duration"
+			outage_start=""
+		fi
+	else
+		consecutive_failures=$((consecutive_failures + 1))
+		consecutive_successes=0
+		total_failures=$((total_failures + 1))
+		bucket_failures=$((bucket_failures + 1))
+
+		if [ "$state" = "online" ] && [ "$consecutive_failures" -gt 0 ]; then
+			state="degraded"
+		fi
+		if [ "$state" != "offline" ] && [ "$consecutive_failures" -ge "$fail_threshold" ]; then
+			state="offline"
+			outage_start=$((ts - fail_threshold + 1))
+			current_latency="null"
+		fi
+	fi
+
+	recent_loss="$(awk -v fail="$bucket_failures" -v total="$bucket_probes" 'BEGIN { if (total == 0) print "0.00"; else printf "%.2f", (fail * 100) / total }')"
+}
+
+probe_cycle() {
+	local target ok
+
+	ok=0
+	resolve_device
+
+	for target in $targets; do
+		if ping_once "$target"; then
+			ok=1
+			break
+		fi
+	done
+
+	handle_result "$ok"
+}
+
+main() {
+	load_settings
+	echo "$$" > "$pid_file"
+
+	state="online"
+	current_latency="null"
+	recent_loss="0.00"
+	consecutive_failures=0
+	consecutive_successes=0
+	total_probes=0
+	total_failures=0
+	outage_count=0
+	longest_outage=0
+	total_downtime=0
+	last_outage_start=""
+	last_outage_end=""
+	last_outage_duration=0
+	outage_start=""
+
+	bucket_start="$(now)"
+	bucket_probes=0
+	bucket_successes=0
+	bucket_failures=0
+	bucket_latency_sum=0
+	bucket_min=""
+	bucket_max=""
+	bucket_outages=0
+	bucket_downtime=0
+	last_flush="$(now)"
+	last_prune="$(now)"
+
+	write_status
+	log "started monitoring interface $interface via targets: $targets"
+
+	while :; do
+		probe_cycle
+		write_status
+
+		if [ $(( $(now) - last_flush )) -ge "$flush_seconds" ]; then
+			flush_bucket
+			last_flush="$(now)"
+		fi
+
+		if [ $(( $(now) - last_prune )) -ge 3600 ]; then
+			prune_storage
+			last_prune="$(now)"
+		fi
+
+		sleep "$interval"
+	done
+}
+
+main "$@"
