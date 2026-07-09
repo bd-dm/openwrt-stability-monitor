@@ -10,10 +10,19 @@ LUCI_TITLE:=LuCI support for WAN ping stability monitoring
 LUCI_DEPENDS:=+luci-base +rpcd +busybox
 LUCI_PKGARCH:=all
 
-include $(TOPDIR)/feeds/luci/luci.mk
-
 define Package/$(PKG_NAME)/conffiles
 /etc/config/wanping
 endef
+
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+[ -n "$$IPKG_INSTROOT" ] || {
+	/etc/init.d/wanping enable
+	/etc/init.d/wanping start
+}
+exit 0
+endef
+
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

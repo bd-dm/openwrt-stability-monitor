@@ -35,6 +35,25 @@ cfg_get() {
 	printf '%s' "$value"
 }
 
+uint_at_least() {
+	local value="$1"
+	local default="$2"
+	local minimum="$3"
+
+	case "$value" in
+		''|*[!0-9]*)
+			printf '%s' "$default"
+			return
+			;;
+	esac
+
+	if [ "$value" -lt "$minimum" ]; then
+		printf '%s' "$default"
+	else
+		printf '%s' "$value"
+	fi
+}
+
 load_settings() {
 	config_load "$APP"
 
@@ -48,12 +67,17 @@ load_settings() {
 	storage_path="$(cfg_get storage_path "$DEFAULT_STORE")"
 	flush_seconds="$(cfg_get flush_seconds 60)"
 
-	[ "$interval" -lt 1 ] 2>/dev/null || interval=1
-	[ "$timeout" -lt 1 ] 2>/dev/null || timeout=1
-	[ "$fail_threshold" -lt 1 ] 2>/dev/null || fail_threshold=3
-	[ "$recovery_threshold" -lt 1 ] 2>/dev/null || recovery_threshold=3
-	[ "$retention_days" -lt 1 ] 2>/dev/null || retention_days=30
-	[ "$flush_seconds" -lt 10 ] 2>/dev/null || flush_seconds=60
+	interval="$(uint_at_least "$interval" 1 1)"
+	timeout="$(uint_at_least "$timeout" 1 1)"
+	fail_threshold="$(uint_at_least "$fail_threshold" 3 1)"
+	recovery_threshold="$(uint_at_least "$recovery_threshold" 3 1)"
+	retention_days="$(uint_at_least "$retention_days" 30 1)"
+	flush_seconds="$(uint_at_least "$flush_seconds" 60 10)"
+
+	case "$storage_path" in
+		/*) ;;
+		*) storage_path="$DEFAULT_STORE" ;;
+	esac
 
 	status_file="$RUNTIME_DIR/status.json"
 	bucket_file="$storage_path/minute-buckets.jsonl"
@@ -62,6 +86,61 @@ load_settings() {
 
 	mkdir -p "$storage_path"
 	mkdir -p "$RUNTIME_DIR"
+}
+
+restore_history() {
+	local summary
+
+	if [ -f "$bucket_file" ]; then
+		summary="$(awk '
+			function number_field(name, line, value) {
+				value = line
+				sub("^.*\"" name "\":", "", value)
+				sub("[^0-9].*$", "", value)
+				return value + 0
+			}
+			{
+				probes += number_field("probes", $0)
+				failures += number_field("failures", $0)
+			}
+			END { printf "%d %d", probes, failures }
+		' "$bucket_file")"
+		set -- $summary
+		total_probes="${1:-0}"
+		total_failures="${2:-0}"
+	fi
+
+	if [ -f "$outage_file" ]; then
+		summary="$(awk '
+			function number_field(name, line, value) {
+				value = line
+				sub("^.*\"" name "\":", "", value)
+				sub("[^0-9].*$", "", value)
+				return value + 0
+			}
+			{
+				start = number_field("start", $0)
+				end = number_field("end", $0)
+				duration = number_field("duration", $0)
+				count++
+				total += duration
+				if (duration > longest) longest = duration
+				last_start = start
+				last_end = end
+				last_duration = duration
+			}
+			END { printf "%d %d %d %d %d %d", count, total, longest, last_start, last_end, last_duration }
+		' "$outage_file")"
+		set -- $summary
+		outage_count="${1:-0}"
+		total_downtime="${2:-0}"
+		longest_outage="${3:-0}"
+		last_outage_start="${4:-}"
+		last_outage_end="${5:-}"
+		last_outage_duration="${6:-0}"
+		[ "$last_outage_start" = 0 ] && last_outage_start=""
+		[ "$last_outage_end" = 0 ] && last_outage_end=""
+	fi
 }
 
 resolve_device() {
@@ -208,6 +287,7 @@ handle_result() {
 	if [ "$ok" = 1 ]; then
 		consecutive_successes=$((consecutive_successes + 1))
 		consecutive_failures=0
+		first_failure_time=""
 		bucket_successes=$((bucket_successes + 1))
 		current_latency="$last_latency"
 		bucket_latency_sum="$(awk -v sum="$bucket_latency_sum" -v rtt="$last_latency" 'BEGIN { printf "%.3f", sum + rtt }')"
@@ -217,6 +297,10 @@ handle_result() {
 		fi
 		if [ -z "$bucket_max" ] || awk -v a="$last_latency" -v b="$bucket_max" 'BEGIN { exit !(a > b) }'; then
 			bucket_max="$last_latency"
+		fi
+
+		if [ "$state" = "degraded" ] && [ "$consecutive_successes" -ge "$recovery_threshold" ]; then
+			state="online"
 		fi
 
 		if [ "$state" = "offline" ] && [ "$consecutive_successes" -ge "$recovery_threshold" ]; then
@@ -235,6 +319,9 @@ handle_result() {
 			outage_start=""
 		fi
 	else
+		if [ "$consecutive_failures" -eq 0 ]; then
+			first_failure_time="$ts"
+		fi
 		consecutive_failures=$((consecutive_failures + 1))
 		consecutive_successes=0
 		total_failures=$((total_failures + 1))
@@ -245,7 +332,7 @@ handle_result() {
 		fi
 		if [ "$state" != "offline" ] && [ "$consecutive_failures" -ge "$fail_threshold" ]; then
 			state="offline"
-			outage_start=$((ts - fail_threshold + 1))
+			outage_start="$first_failure_time"
 			current_latency="null"
 		fi
 	fi
@@ -269,9 +356,19 @@ probe_cycle() {
 	handle_result "$ok"
 }
 
+stop_monitor() {
+	flush_bucket
+	state="stopped"
+	current_latency="null"
+	write_status
+	rm -f "$pid_file"
+	exit 0
+}
+
 main() {
 	load_settings
 	echo "$$" > "$pid_file"
+	trap stop_monitor INT TERM
 
 	state="online"
 	current_latency="null"
@@ -287,6 +384,7 @@ main() {
 	last_outage_end=""
 	last_outage_duration=0
 	outage_start=""
+	first_failure_time=""
 
 	bucket_start="$(now)"
 	bucket_probes=0
@@ -299,6 +397,7 @@ main() {
 	bucket_downtime=0
 	last_flush="$(now)"
 	last_prune="$(now)"
+	restore_history
 
 	write_status
 	log "started monitoring interface $interface via targets: $targets"
