@@ -111,8 +111,15 @@ jobs:
       - name: Collect APK artifacts
         run: |
           mkdir -p artifacts
-          find openwrt-sdk/bin -type f -name "${PACKAGE_NAME}_*.apk" -print -exec cp {} artifacts/ \;
-          test -n "$(find artifacts -type f -name '*.apk' -print -quit)"
+          find openwrt-sdk/bin -type f -name "${PACKAGE_NAME}-*.apk" -print -exec cp {} artifacts/ \;
+
+          if ! find artifacts -type f -name '*.apk' -print -quit | grep -q .; then
+            echo "No APK artifacts found for ${PACKAGE_NAME}. Package outputs under openwrt-sdk/bin:"
+            find openwrt-sdk/bin -type f \( -name '*.apk' -o -name '*.ipk' \) -print
+            exit 1
+          fi
+
+          find artifacts -type f -name '*.apk' -print
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
