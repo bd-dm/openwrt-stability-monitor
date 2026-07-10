@@ -21,6 +21,9 @@ on:
         required: true
         default: armv8
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build luci-app-wanping for rockchip/armv8
@@ -127,3 +130,19 @@ jobs:
           name: ${{ env.PACKAGE_NAME }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}-${{ env.OPENWRT_VERSION }}
           path: artifacts/*.apk
           if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PACKAGE_NAME }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}-${{ env.OPENWRT_VERSION }}-${{ github.run_number }}.${{ github.run_attempt }}
+          name: ${{ env.PACKAGE_NAME }} for ${{ env.OPENWRT_TARGET }}/${{ env.OPENWRT_SUBTARGET }} (${{ env.OPENWRT_VERSION }})
+          body: |
+            OpenWrt APK build for `${{ env.OPENWRT_TARGET }}/${{ env.OPENWRT_SUBTARGET }}`.
+
+            - OpenWrt version: `${{ env.OPENWRT_VERSION }}`
+            - Package: `${{ env.PACKAGE_NAME }}`
+            - Commit: `${{ github.sha }}`
+            - Workflow run: `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+          files: artifacts/*.apk
+          fail_on_unmatched_files: true
