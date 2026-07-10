@@ -48,28 +48,23 @@ function stat(label, value) {
 function chart(values, color, suffix) {
 	var clean = values.filter(function(v) { return v != null && isFinite(v); });
 	var max = Math.max.apply(Math, clean.concat([1]));
-	var points = [];
+	var bars = [];
 
 	for (var i = 0; i < values.length; i++) {
-		var x = values.length <= 1 ? 0 : (i / (values.length - 1)) * 100;
-		var y = 46;
+		var value = values[i];
+		var height = 2;
 
-		if (values[i] != null && isFinite(values[i]))
-			y = 46 - ((Number(values[i]) / max) * 38);
+		if (value != null && isFinite(value))
+			height = Math.max(2, (Number(value) / max) * 100);
 
-		points.push('%.2f,%.2f'.format(x, y));
+		bars.push(E('i', {
+			'style': 'height:%.2f%%;background:%s'.format(height, color),
+			'title': value == null || !isFinite(value) ? _('No data') : '%.2f%s'.format(Number(value), suffix)
+		}));
 	}
 
 	return E('div', { 'class': 'wanping-chart' }, [
-		E('svg', { viewBox: '0 0 100 52', preserveAspectRatio: 'none' }, [
-			E('polyline', {
-				points: points.join(' '),
-				fill: 'none',
-				stroke: color,
-				'stroke-width': '2.5',
-				'vector-effect': 'non-scaling-stroke'
-			})
-		]),
+		E('div', { 'class': 'wanping-chart-plot' }, bars.length ? bars : [ E('em', {}, _('No data')) ]),
 		E('span', {}, clean.length ? _('Peak %s%s').format(max.toFixed(1), suffix) : _('No data'))
 	]);
 }
@@ -129,23 +124,25 @@ return view.extend({
 		var root = E('div', { 'class': 'wanping-root' });
 		var style = E('style', {}, [
 			'.wanping-root{display:flex;flex-direction:column;gap:18px}',
-			'.wanping-hero{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:16px;align-items:stretch}',
-			'.wanping-panel,.wanping-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:16px}',
+			'.wanping-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:stretch}',
+			'.wanping-panel,.wanping-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:16px;min-width:0;overflow:hidden}',
 			'.wanping-state{display:flex;align-items:center;gap:12px;margin-bottom:14px}',
 			'.wanping-dot{width:14px;height:14px;border-radius:50%;background:#888;box-shadow:0 0 0 5px rgba(0,0,0,.06)}',
 			'.wanping-online .wanping-dot{background:#149650}.wanping-degraded .wanping-dot{background:#c78a05}.wanping-offline .wanping-dot{background:#c3352b}',
 			'.wanping-state strong{font-size:22px;text-transform:capitalize}',
 			'.wanping-meta{color:var(--text-color-medium,#666);margin:0}',
-			'.wanping-stats{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px}',
-			'.wanping-stat{border-top:3px solid #4c6fff;background:var(--background-color-low,#f6f6f6);border-radius:6px;padding:12px;min-height:70px}',
+			'.wanping-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(145px,100%),1fr));gap:10px;min-width:0}',
+			'.wanping-stat{border-top:3px solid #4c6fff;background:var(--background-color-low,#f6f6f6);border-radius:6px;padding:12px;min-height:70px;min-width:0}',
 			'.wanping-stat-label{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-bottom:8px}',
-			'.wanping-stat strong{font-size:20px;line-height:1.2}',
+			'.wanping-stat strong{display:block;font-size:20px;line-height:1.2;overflow-wrap:anywhere}',
 			'.wanping-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}',
-			'.wanping-chart svg{display:block;width:100%;height:160px;background:linear-gradient(180deg,rgba(76,111,255,.08),rgba(76,111,255,.02));border-radius:6px}',
+			'.wanping-chart-plot{display:flex;align-items:flex-end;gap:2px;width:100%;height:160px;padding:10px;background:linear-gradient(180deg,rgba(76,111,255,.08),rgba(76,111,255,.02));border-radius:6px;box-sizing:border-box}',
+			'.wanping-chart-plot i{display:block;flex:1 1 2px;min-width:2px;border-radius:2px 2px 0 0;opacity:.9}',
+			'.wanping-chart-plot em{align-self:center;margin:auto;color:var(--text-color-medium,#666);font-style:normal}',
 			'.wanping-chart span{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-top:8px}',
 			'.wanping-history{width:100%;border-collapse:collapse}',
 			'.wanping-history th,.wanping-history td{padding:10px;border-bottom:1px solid var(--border-color-low,#eee);text-align:left}',
-			'@media(max-width:900px){.wanping-hero,.wanping-grid{grid-template-columns:1fr}.wanping-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+			'@media(max-width:900px){.wanping-hero,.wanping-grid{grid-template-columns:1fr}}',
 			'@media(max-width:520px){.wanping-stats{grid-template-columns:1fr}}'
 		].join(''));
 		var status = data.status || {};
