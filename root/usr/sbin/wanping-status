@@ -61,12 +61,31 @@ emit_json() {
 	printf '}\n'
 }
 
+reset_stats() {
+	local path status_file bucket_file outage_file pid_file
+
+	path="$(storage_path)"
+	status_file="$RUNTIME_DIR/status.json"
+	bucket_file="$path/minute-buckets.jsonl"
+	outage_file="$path/outages.jsonl"
+	pid_file="$RUNTIME_DIR/monitor.pid"
+
+	/etc/init.d/wanping stop >/dev/null 2>&1
+	rm -f "$bucket_file" "$outage_file" "$status_file" "$pid_file"
+	/etc/init.d/wanping start >/dev/null 2>&1
+
+	printf '{"ok":true}\n'
+}
+
 case "$1" in
 	json|"")
 		emit_json
 		;;
+	reset)
+		reset_stats
+		;;
 	*)
-		echo "usage: wanping-status json" >&2
+		echo "usage: wanping-status json|reset" >&2
 		exit 1
 		;;
 esac

@@ -8,6 +8,9 @@
 			"uci": [ "wanping" ]
 		},
 		"write": {
+			"file": {
+				"/usr/sbin/wanping-status": [ "exec" ]
+			},
 			"uci": [ "wanping" ]
 		}
 	}
