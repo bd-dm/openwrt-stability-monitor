@@ -27,6 +27,26 @@ built with the matching OpenWrt SDK for the target platform.
 The workflow also keeps a copy as a GitHub Actions artifact, but releases are
 the easiest place to download installable builds.
 
+## Versioning and Releases
+
+The project uses [Semantic Versioning](https://semver.org/) and Release Please.
+Version bumps, `CHANGELOG.md`, Git tags, and GitHub releases are automated from
+Conventional Commit messages merged into `main`:
+
+- `fix:` creates a patch release.
+- `feat:` creates a minor release.
+- A `BREAKING CHANGE:` footer or `!` after the commit type creates a major
+  release.
+- Other commit types, such as `docs:`, do not trigger a version bump by
+  themselves.
+
+After releasable commits reach `main`, the workflow creates or updates a release
+pull request. Merging that pull request updates `version.txt`, the package
+version in `Makefile`, and `CHANGELOG.md`, then creates a `vX.Y.Z` GitHub release
+and attaches the built APK. `PKG_RELEASE` remains the OpenWrt packaging revision
+and should only be increased when packaging changes without a new upstream
+version.
+
 ## Install
 
 Copy the APK to the router:

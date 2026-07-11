@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-stability-monitor
-PKG_VERSION:=0.1.0
+PKG_VERSION:=0.1.0 # x-release-please-version
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OpenWrt Stability Monitor

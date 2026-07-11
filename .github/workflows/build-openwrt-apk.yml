@@ -23,10 +23,25 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Update release pull request or create release
+        id: release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: googleapis/release-please-action@v4
+
   build-apk:
     name: Build luci-app-stability-monitor for rockchip/armv8
+    needs: release-please
     runs-on: ubuntu-24.04
 
     env:
@@ -132,17 +147,9 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub release
-        if: github.event_name != 'pull_request'
+        if: needs.release-please.outputs.release_created == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.PACKAGE_NAME }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}-${{ env.OPENWRT_VERSION }}-${{ github.run_number }}.${{ github.run_attempt }}
-          name: ${{ env.PACKAGE_NAME }} for ${{ env.OPENWRT_TARGET }}/${{ env.OPENWRT_SUBTARGET }} (${{ env.OPENWRT_VERSION }})
-          body: |
-            OpenWrt APK build for `${{ env.OPENWRT_TARGET }}/${{ env.OPENWRT_SUBTARGET }}`.
-
-            - OpenWrt version: `${{ env.OPENWRT_VERSION }}`
-            - Package: `${{ env.PACKAGE_NAME }}`
-            - Commit: `${{ github.sha }}`
-            - Workflow run: `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: artifacts/*.apk
           fail_on_unmatched_files: true
