@@ -3,6 +3,16 @@
 		"title": "Stability Monitor",
 		"order": 55,
 		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-stability-monitor" ]
+		}
+	},
+	"admin/status/stability-monitor/main": {
+		"title": "Main",
+		"order": 10,
+		"action": {
 			"type": "view",
 			"path": "stability-monitor/dashboard"
 		},
@@ -12,7 +22,7 @@
 	},
 	"admin/status/stability-monitor/settings": {
 		"title": "Settings",
-		"order": 56,
+		"order": 20,
 		"action": {
 			"type": "view",
 			"path": "stability-monitor/settings"
