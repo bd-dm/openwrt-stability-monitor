@@ -146,16 +146,21 @@ function chartPoints(buckets, now, range, slots) {
 	return points;
 }
 
-function latencyColor(value, min, max) {
-	var ratio = max > min ? (value - min) / (max - min) : 0;
-	var hue = Math.round(132 - ratio * 82);
+function latencyColor(value) {
+	var ratio, hue;
 
+	if (value < 30)
+		return '#149650';
+	if (value > 100)
+		return '#e67e22';
+
+	ratio = (value - 30) / 70;
+	hue = Math.round(132 - ratio * 80);
 	return 'hsl(%d,72%%,42%%)'.format(hue);
 }
 
 function chart(points, title, includeDate) {
 	var latencies = points.filter(function(point) { return point.latency != null; }).map(function(point) { return point.latency; });
-	var min = latencies.length ? Math.min.apply(Math, latencies) : 0;
 	var max = latencies.length ? Math.max.apply(Math, latencies) : 1;
 	var bars = points.map(function(point, index) {
 		var hasLoss = point.loss > 0;
@@ -170,7 +175,7 @@ function chart(points, title, includeDate) {
 		}
 		else if (point.latency != null) {
 			height = max > 0 ? Math.max(8, point.latency / max * 100) : 8;
-			color = latencyColor(point.latency, min, max);
+			color = latencyColor(point.latency);
 			label = _('%s — %.1f ms').format(fmtTime(point.start, includeDate), point.latency);
 		}
 		else {
@@ -188,13 +193,47 @@ function chart(points, title, includeDate) {
 	return E('section', { 'class': 'stability-monitor-card stability-monitor-chart-card' }, [
 		E('div', { 'class': 'stability-monitor-chart-heading' }, [
 			E('h3', {}, title),
-			E('span', {}, _('green: lower · yellow: higher · red: loss'))
+			E('span', {}, _('green: <30 ms · yellow: 30–100 ms · orange: >100 ms · red: loss'))
 		]),
 		E('div', { 'class': 'stability-monitor-chart-plot' }, bars),
 		E('div', { 'class': 'stability-monitor-chart-axis' }, [
 			E('span', {}, fmtTime(points[0].start, includeDate)),
 			E('span', {}, _('now'))
 		])
+	]);
+}
+
+function speedChart(tests) {
+	var visible = tests.slice(-60);
+	var values = visible.map(function(test) { return Number(test.bits_per_second || 0); });
+	var max = values.length ? Math.max.apply(Math, values) : 0;
+	var bars = visible.map(function(test, index) {
+		var value = Number(test.bits_per_second || 0);
+		var label = _('%s — %s — %s').format(
+			fmtTime(test.end || test.start, true),
+			test.direction || '-',
+			fmtSpeed(value)
+		);
+
+		return E('i', {
+			'style': '--bar-height:%.2f%%;--bar-color:#3478d4;--bar-delay:%dms'.format(max > 0 ? Math.max(8, value / max * 100) : 2, index * 12),
+			'aria-label': label,
+			'data-tooltip': label
+		});
+	});
+
+	return E('div', { 'class': 'stability-monitor-speed-chart' }, [
+		E('div', { 'class': 'stability-monitor-chart-heading' }, [
+			E('h3', {}, _('Speed test history')),
+			E('span', {}, _('latest 60 stored tests'))
+		]),
+		visible.length
+			? E('div', { 'class': 'stability-monitor-chart-plot' }, bars)
+			: E('div', { 'class': 'stability-monitor-chart-empty' }, _('No speed test results yet.')),
+		visible.length ? E('div', { 'class': 'stability-monitor-chart-axis' }, [
+			E('span', {}, fmtTime(visible[0].end || visible[0].start, true)),
+			E('span', {}, fmtTime(visible[visible.length - 1].end || visible[visible.length - 1].start, true))
+		]) : ''
 	]);
 }
 
@@ -218,7 +257,7 @@ return view.extend({
 		var speedAllTime = iperf.all_time || summarizeSpeed(speedTests);
 		var lastSpeed = iperf.last_test || (speedTests.length ? speedTests[speedTests.length - 1] : null);
 		var style = E('style', {}, [
-			'.stability-monitor-root{display:flex;flex-direction:column;gap:14px}',
+			'.stability-monitor-root{display:flex;flex-direction:column;gap:14px;margin-bottom:1.5em}',
 			'.stability-monitor-actions{display:flex;justify-content:flex-end}',
 			'.stability-monitor-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:14px;min-width:0;overflow:hidden}',
 			'.stability-monitor-status{display:flex;align-items:center;gap:12px}',
@@ -239,6 +278,8 @@ return view.extend({
 			'.stability-monitor-chart-plot i:hover:after,.stability-monitor-chart-plot i:focus:after{display:block}',
 			'.stability-monitor-no-animation .stability-monitor-chart-plot i{animation:none}',
 			'.stability-monitor-chart-axis{display:flex;justify-content:space-between;margin-top:4px}',
+			'.stability-monitor-speed-chart{margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color-low,#eee)}',
+			'.stability-monitor-chart-empty{display:flex;align-items:center;justify-content:center;height:105px;border-radius:6px;background:var(--background-color-low,#f5f6f7);color:var(--text-color-medium,#666)}',
 			'.stability-monitor-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}',
 			'.stability-monitor-stats-title{margin:0 0 9px;font-size:14px}',
 			'.stability-monitor-stat{background:var(--background-color-low,#f5f6f7);border-radius:6px;padding:10px;min-width:0}',
@@ -288,7 +329,8 @@ return view.extend({
 			]),
 			E('p', { 'class': 'stability-monitor-meta' }, iperf.enabled
 				? _('%d stored tests · %s · server %s').format(Number(speedAllTime.tests || 0), iperf.direction || '-', iperf.server || '-')
-				: _('Speed tests are disabled in Settings.'))
+				: _('Speed tests are disabled in Settings.')),
+			speedChart(speedTests)
 		]));
 
 		return root;

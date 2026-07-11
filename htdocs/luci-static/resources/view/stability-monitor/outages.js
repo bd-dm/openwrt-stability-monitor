@@ -41,6 +41,7 @@ return view.extend({
 		var root = E('div', { 'class': 'stability-monitor-history-root' });
 
 		root.appendChild(E('style', {}, [
+			'.stability-monitor-history-root{margin-bottom:1.5em}',
 			'.stability-monitor-history-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:14px;overflow-x:auto}',
 			'.stability-monitor-history{width:100%;border-collapse:collapse}',
 			'.stability-monitor-history th,.stability-monitor-history td{padding:10px;border-bottom:1px solid var(--border-color-low,#eee);text-align:left;white-space:nowrap}',
