@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: openwrt-sdk
-          key: openwrt-sdk-v1-${{ runner.os }}-${{ env.OPENWRT_VERSION }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}
+          key: openwrt-sdk-v2-${{ runner.os }}-${{ env.OPENWRT_VERSION }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}
 
       - name: Install SDK build dependencies
         run: |
@@ -117,8 +117,8 @@ jobs:
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         working-directory: openwrt-sdk
         run: |
-          ./scripts/feeds update luci
-          ./scripts/feeds install -a -p luci
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Save prepared OpenWrt SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
