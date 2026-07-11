@@ -93,21 +93,50 @@ restore_history() {
 
 	if [ -f "$bucket_file" ]; then
 		summary="$(awk '
-			function number_field(name, line, value) {
+			function field(name, line, value) {
 				value = line
 				sub("^.*\"" name "\":", "", value)
-				sub("[^0-9].*$", "", value)
-				return value + 0
+				sub(/[,}].*$/, "", value)
+				return value
 			}
 			{
-				probes += number_field("probes", $0)
-				failures += number_field("failures", $0)
+				probes += field("probes", $0) + 0
+				failures += field("failures", $0) + 0
+				successes = field("successes", $0) + 0
+				avg = field("avg_latency_ms", $0)
+				min_value = field("min_latency_ms", $0)
+				max_value = field("max_latency_ms", $0)
+				outages += field("outages", $0) + 0
+
+				if (avg != "null" && successes > 0) {
+					latency_sum += avg * successes
+					latency_count += successes
+				}
+				if (min_value != "null" && (!has_min || min_value + 0 < min_latency)) {
+					min_latency = min_value + 0
+					has_min = 1
+				}
+				if (max_value != "null" && (!has_max || max_value + 0 > max_latency)) {
+					max_latency = max_value + 0
+					has_max = 1
+				}
 			}
-			END { printf "%d %d", probes, failures }
+			END {
+				printf "%d %d %.3f %d ", probes, failures, latency_sum, latency_count
+				if (has_min) printf "%.3f", min_latency; else printf "null"
+				printf " "
+				if (has_max) printf "%.3f", max_latency; else printf "null"
+				printf " %d", outages
+			}
 		' "$bucket_file")"
 		set -- $summary
 		total_probes="${1:-0}"
 		total_failures="${2:-0}"
+		stored_latency_sum="${3:-0}"
+		stored_latency_count="${4:-0}"
+		stored_min_latency="${5:-null}"
+		stored_max_latency="${6:-null}"
+		stored_outages="${7:-0}"
 	fi
 
 	if [ -f "$outage_file" ]; then
@@ -171,13 +200,18 @@ ping_once() {
 
 write_status() {
 	local tmp="$status_file.$$"
-	local ts iso outage_json last_start last_end
+	local ts iso outage_json last_start last_end stored_avg
 
 	ts="$(now)"
 	iso="$(iso_time)"
 	last_start=""
 	last_end=""
 	outage_json="null"
+	stored_avg="null"
+
+	if [ "$stored_latency_count" -gt 0 ]; then
+		stored_avg="$(awk -v sum="$stored_latency_sum" -v count="$stored_latency_count" 'BEGIN { printf "%.3f", sum / count }')"
+	fi
 
 	if [ -n "$last_outage_start" ]; then
 		last_start="$(epoch_iso_time "$last_outage_start")"
@@ -200,6 +234,7 @@ write_status() {
   "outage_count": $outage_count,
   "longest_outage": $longest_outage,
   "total_downtime": $total_downtime,
+  "all_time": {"min_latency_ms":$stored_min_latency,"avg_latency_ms":$stored_avg,"max_latency_ms":$stored_max_latency,"outages":$stored_outages},
   "last_outage": $outage_json,
   "consecutive_failures": $consecutive_failures,
   "consecutive_successes": $consecutive_successes
@@ -231,6 +266,19 @@ flush_bucket() {
 		"$tmp_start" "$(now)" "$(json_escape "$interface")" "$(json_escape "$device")" \
 		"$bucket_probes" "$bucket_successes" "$bucket_failures" "$loss" \
 		"$avg" "$min_json" "$max_json" "$bucket_outages" "$bucket_downtime" >> "$bucket_file"
+
+	if [ "$bucket_successes" -gt 0 ]; then
+		stored_latency_sum="$(awk -v sum="$stored_latency_sum" -v add="$bucket_latency_sum" 'BEGIN { printf "%.3f", sum + add }')"
+		stored_latency_count=$((stored_latency_count + bucket_successes))
+
+		if [ "$stored_min_latency" = "null" ] || awk -v a="$bucket_min" -v b="$stored_min_latency" 'BEGIN { exit !(a < b) }'; then
+			stored_min_latency="$bucket_min"
+		fi
+		if [ "$stored_max_latency" = "null" ] || awk -v a="$bucket_max" -v b="$stored_max_latency" 'BEGIN { exit !(a > b) }'; then
+			stored_max_latency="$bucket_max"
+		fi
+	fi
+	stored_outages=$((stored_outages + bucket_outages))
 
 	bucket_start="$(now)"
 	bucket_probes=0
@@ -380,6 +428,11 @@ main() {
 	outage_count=0
 	longest_outage=0
 	total_downtime=0
+	stored_latency_sum=0
+	stored_latency_count=0
+	stored_min_latency="null"
+	stored_max_latency="null"
+	stored_outages=0
 	last_outage_start=""
 	last_outage_end=""
 	last_outage_duration=0
@@ -413,6 +466,13 @@ main() {
 
 		if [ $(( $(now) - last_prune )) -ge 3600 ]; then
 			prune_storage
+			stored_latency_sum=0
+			stored_latency_count=0
+			stored_min_latency="null"
+			stored_max_latency="null"
+			stored_outages=0
+			restore_history
+			write_status
 			last_prune="$(now)"
 		fi
 
