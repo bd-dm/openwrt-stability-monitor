@@ -187,10 +187,21 @@ Default configuration:
 - Recovery starts after: `3` consecutive successes
 - Storage path: `/etc/stability-monitor`
 - Retention: `30` days
+- iperf3 speed tests: disabled
+- iperf3 port: `5201`
+- Speed-test interval: `3600` seconds
+- Speed-test duration: `10` seconds
+- Parallel streams: `1`
+- Direction: download
 
 The monitor sends IPv4 pings through the selected OpenWrt network interface.
 Choose the logical interface that represents the WAN path you want to monitor,
 for example `wan`, `pppoe-wan`, or another interface from your router config.
+
+Optional iperf3 tests run as a background client, so ping collection continues
+while a speed test is active. Configure a reachable iperf3 server in Settings,
+then choose the interval, duration, port, parallel stream count, and upload or
+download direction. The client binds to the monitored interface's IPv4 address.
 
 ## Service Commands
 
@@ -252,6 +263,13 @@ config monitor 'monitor'
 	option retention_days '30'
 	option storage_path '/etc/stability-monitor'
 	option flush_seconds '60'
+	option iperf_enabled '0'
+	option iperf_server ''
+	option iperf_port '5201'
+	option iperf_interval '3600'
+	option iperf_duration '10'
+	option iperf_parallel '1'
+	option iperf_direction 'download'
 ```
 
 After editing manually, reload the service:
@@ -269,6 +287,7 @@ Files:
 
 - `minute-buckets.jsonl`: summarized probe, latency, and packet-loss buckets
 - `outages.jsonl`: recorded outage events
+- `speed-tests.jsonl`: successful periodic iperf3 test results
 
 Runtime status is stored under:
 

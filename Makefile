@@ -9,7 +9,7 @@ PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OpenWrt Stability Monitor
 
 LUCI_TITLE:=LuCI support for WAN ping stability monitoring
-LUCI_DEPENDS:=+luci-base +rpcd +busybox
+LUCI_DEPENDS:=+luci-base +rpcd +busybox +iperf3 +jsonfilter
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/conffiles

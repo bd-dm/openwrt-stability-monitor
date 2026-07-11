@@ -41,12 +41,13 @@ emit_file_array() {
 }
 
 emit_json() {
-	local path status_file bucket_file outage_file status
+	local path status_file bucket_file outage_file speed_file status
 
 	path="$(storage_path)"
 	status_file="$RUNTIME_DIR/status.json"
 	bucket_file="$path/minute-buckets.jsonl"
 	outage_file="$path/outages.jsonl"
+	speed_file="$path/speed-tests.jsonl"
 
 	if [ -f "$status_file" ]; then
 		status="$(cat "$status_file")"
@@ -58,20 +59,23 @@ emit_json() {
 	emit_file_array "$bucket_file" 43200
 	printf ',"outages":'
 	emit_file_array "$outage_file" 100
+	printf ',"speed_tests":'
+	emit_file_array "$speed_file" 1000
 	printf '}\n'
 }
 
 reset_stats() {
-	local path status_file bucket_file outage_file pid_file
+	local path status_file bucket_file outage_file speed_file pid_file
 
 	path="$(storage_path)"
 	status_file="$RUNTIME_DIR/status.json"
 	bucket_file="$path/minute-buckets.jsonl"
 	outage_file="$path/outages.jsonl"
+	speed_file="$path/speed-tests.jsonl"
 	pid_file="$RUNTIME_DIR/monitor.pid"
 
 	/etc/init.d/stability-monitor stop >/dev/null 2>&1
-	rm -f "$bucket_file" "$outage_file" "$status_file" "$pid_file"
+	rm -f "$bucket_file" "$outage_file" "$speed_file" "$status_file" "$pid_file"
 	/etc/init.d/stability-monitor start >/dev/null 2>&1
 
 	printf '{"ok":true}\n'
