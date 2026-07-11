@@ -151,7 +151,6 @@ function chart(points, title, includeDate) {
 		return E('i', {
 			'class': hasLoss ? 'stability-monitor-loss-bar' : '',
 			'style': '--bar-height:%.2f%%;--bar-color:%s;--bar-delay:%dms'.format(height, color, index * 12),
-			'tabindex': '0',
 			'aria-label': label,
 			'data-tooltip': label
 		});
@@ -195,7 +194,7 @@ return view.extend({
 			'.stability-monitor-status strong{display:block;font-size:20px;text-transform:capitalize}',
 			'.stability-monitor-meta{color:var(--text-color-medium,#666);margin:3px 0 0}',
 			'.stability-monitor-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}',
-			'.stability-monitor-chart-card{padding-bottom:10px}',
+			'.stability-monitor-chart-card{padding-bottom:10px;overflow:visible}',
 			'.stability-monitor-chart-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}',
 			'.stability-monitor-chart-heading h3{margin:0}',
 			'.stability-monitor-chart-heading span,.stability-monitor-chart-axis{color:var(--text-color-medium,#666);font-size:11px}',
@@ -282,10 +281,9 @@ return view.extend({
 				return JSON.parse(res || '{}');
 			}).then(function(fresh) {
 				var current = document.querySelector('.stability-monitor-root');
-				var focused = document.activeElement && current && current.contains(document.activeElement);
 				var hovered = current && current.querySelector('.stability-monitor-chart-plot i:hover');
 
-				if (focused || hovered)
+				if (hovered)
 					return;
 
 				var replacement = this.buildDashboard(fresh, false);
