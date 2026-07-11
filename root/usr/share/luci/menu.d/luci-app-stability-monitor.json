@@ -30,5 +30,16 @@
 		"depends": {
 			"acl": [ "luci-app-stability-monitor" ]
 		}
+	},
+	"admin/status/stability-monitor/outages": {
+		"title": "Outage History",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "stability-monitor/outages"
+		},
+		"depends": {
+			"acl": [ "luci-app-stability-monitor" ]
+		}
 	}
 }
