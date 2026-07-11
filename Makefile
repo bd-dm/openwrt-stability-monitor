@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-stability-monitor
 # x-release-please-start-version
-PKG_VERSION:=0.2.0
+PKG_VERSION:=0.3.0
 # x-release-please-end
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
