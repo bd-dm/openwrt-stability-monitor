@@ -5,7 +5,7 @@ OpenWrt. It continuously pings configured IPv4 targets through one selected
 OpenWrt network interface, records summarized outage and latency data, and shows
 the current status in LuCI.
 
-This package is intended for OpenWrt 25+ systems using APK packages.
+This package is intended for OpenWrt 25.12 and newer systems using APK packages.
 
 ## Target Device
 
@@ -18,7 +18,75 @@ The included GitHub Actions workflow builds APK artifacts for:
 The package itself is architecture-independent LuCI and shell code, but it is
 built with the matching OpenWrt SDK for the target platform.
 
-## Download
+## Package feed
+
+The signed OpenWrt 25.12+ APK feed is published at:
+
+```text
+https://bd-dm.github.io/openwrt-stability-monitor/packages.adb
+```
+
+Its public signing key is available at:
+
+```text
+https://bd-dm.github.io/openwrt-stability-monitor/stability-monitor.pem
+```
+
+### Add the feed to OpenWrt
+
+OpenWrt must trust the feed signing key before it will accept the repository.
+OpenWrt 25.12 LuCI does not currently provide a signing-key import control, so
+the initial enrollment requires one short SSH session. Installation and future
+updates can then be performed entirely through LuCI.
+
+1. Connect to the router:
+
+   ```sh
+   ssh root@192.168.1.1
+   ```
+
+2. Download the public signing key into APK's trusted-key directory:
+
+   ```sh
+   wget -O /etc/apk/keys/stability-monitor.pem \
+     https://bd-dm.github.io/openwrt-stability-monitor/stability-monitor.pem
+   ```
+
+3. Register the package index:
+
+   ```sh
+   printf '%s\n' \
+     'https://bd-dm.github.io/openwrt-stability-monitor/packages.adb' \
+     > /etc/apk/repositories.d/stability-monitor.list
+   ```
+
+4. Open **LuCI → System → Software** and click **Update lists**.
+
+5. Search for `luci-app-stability-monitor` in the available packages and click
+   **Install**. Log out and back in if the new menu does not appear immediately.
+
+### Update through LuCI
+
+Open **LuCI → System → Software**, click **Update lists**, switch to the
+installed/upgradable package view, and upgrade `luci-app-stability-monitor`.
+The UCI configuration at `/etc/config/stability-monitor` is preserved across
+package updates.
+
+### Remove the feed
+
+Removing the repository does not uninstall the package. To stop receiving
+updates from this feed, delete its repository file and optionally its trusted
+key:
+
+```sh
+rm /etc/apk/repositories.d/stability-monitor.list
+rm /etc/apk/keys/stability-monitor.pem
+```
+
+The feed URLs start working after the first release containing the feed
+publishing workflow has completed successfully.
+
+## Release downloads
 
 1. Open this repository on GitHub.
 2. Go to **Releases**.
@@ -47,7 +115,7 @@ and attaches the built APK. `PKG_RELEASE` remains the OpenWrt packaging revision
 and should only be increased when packaging changes without a new upstream
 version.
 
-## Install
+## Local installation fallback
 
 Copy the APK to the router:
 

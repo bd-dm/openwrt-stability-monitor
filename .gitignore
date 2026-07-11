@@ -1,0 +1,6 @@
+.private/
+artifacts/
+openwrt-sdk/
+site/
+sha256sums
+openwrt-sdk-*.tar.*
