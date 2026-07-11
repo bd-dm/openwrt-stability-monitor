@@ -26,6 +26,10 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release-please:
     name: Prepare release
@@ -54,10 +58,17 @@ jobs:
       - name: Checkout package
         uses: actions/checkout@v4
 
+      - name: Restore prepared OpenWrt SDK
+        id: sdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: openwrt-sdk
+          key: openwrt-sdk-v1-${{ runner.os }}-${{ env.OPENWRT_VERSION }}-${{ env.OPENWRT_TARGET }}-${{ env.OPENWRT_SUBTARGET }}
+
       - name: Install SDK build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
             flex \
@@ -81,6 +92,7 @@ jobs:
             zlib1g-dev
 
       - name: Download OpenWrt SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           set -eux
 
@@ -102,10 +114,18 @@ jobs:
           tar --strip-components=1 -xf "openwrt-sdk.tar.${sdk_archive##*.}" -C openwrt-sdk
 
       - name: Install OpenWrt feeds
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         working-directory: openwrt-sdk
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          ./scripts/feeds update luci
+          ./scripts/feeds install -a -p luci
+
+      - name: Save prepared OpenWrt SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt-sdk
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
 
       - name: Add package to SDK
         run: |
