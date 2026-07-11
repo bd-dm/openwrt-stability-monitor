@@ -61,6 +61,47 @@ return view.extend({
 		o.datatype = 'directory';
 		o.default = '/etc/stability-monitor';
 
+		s = m.section(form.NamedSection, 'monitor', 'monitor', _('iperf3 speed tests'));
+		s.anonymous = true;
+		s.description = _('Run periodic speed tests in the background without interrupting ping monitoring. An iperf3 server must be reachable through the monitored interface.');
+
+		o = s.option(form.Flag, 'iperf_enabled', _('Enable speed tests'));
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'iperf_server', _('iperf3 server'));
+		o.placeholder = 'iperf.example.net';
+		o.rmempty = false;
+		o.depends('iperf_enabled', '1');
+
+		o = s.option(form.Value, 'iperf_port', _('Server port'));
+		o.datatype = 'port';
+		o.default = '5201';
+		o.depends('iperf_enabled', '1');
+
+		o = s.option(form.Value, 'iperf_interval', _('Test interval'));
+		o.datatype = 'range(60,604800)';
+		o.default = '3600';
+		o.description = _('Seconds between test starts (minimum 60).');
+		o.depends('iperf_enabled', '1');
+
+		o = s.option(form.Value, 'iperf_duration', _('Test duration'));
+		o.datatype = 'range(1,300)';
+		o.default = '10';
+		o.description = _('Duration of each test in seconds.');
+		o.depends('iperf_enabled', '1');
+
+		o = s.option(form.Value, 'iperf_parallel', _('Parallel streams'));
+		o.datatype = 'range(1,32)';
+		o.default = '1';
+		o.depends('iperf_enabled', '1');
+
+		o = s.option(form.ListValue, 'iperf_direction', _('Direction'));
+		o.value('download', _('Download'));
+		o.value('upload', _('Upload'));
+		o.default = 'download';
+		o.depends('iperf_enabled', '1');
+
 		return m.render();
 	}
 });

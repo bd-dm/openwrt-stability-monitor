@@ -66,6 +66,13 @@ load_settings() {
 	retention_days="$(cfg_get retention_days 30)"
 	storage_path="$(cfg_get storage_path "$DEFAULT_STORE")"
 	flush_seconds="$(cfg_get flush_seconds 60)"
+	iperf_enabled="$(cfg_get iperf_enabled 0)"
+	iperf_server="$(cfg_get iperf_server '')"
+	iperf_port="$(cfg_get iperf_port 5201)"
+	iperf_interval="$(cfg_get iperf_interval 3600)"
+	iperf_duration="$(cfg_get iperf_duration 10)"
+	iperf_parallel="$(cfg_get iperf_parallel 1)"
+	iperf_direction="$(cfg_get iperf_direction download)"
 
 	interval="$(uint_at_least "$interval" 1 1)"
 	timeout="$(uint_at_least "$timeout" 1 1)"
@@ -73,6 +80,13 @@ load_settings() {
 	recovery_threshold="$(uint_at_least "$recovery_threshold" 3 1)"
 	retention_days="$(uint_at_least "$retention_days" 30 1)"
 	flush_seconds="$(uint_at_least "$flush_seconds" 60 10)"
+	iperf_port="$(uint_at_least "$iperf_port" 5201 1)"
+	iperf_interval="$(uint_at_least "$iperf_interval" 3600 60)"
+	iperf_duration="$(uint_at_least "$iperf_duration" 10 1)"
+	iperf_parallel="$(uint_at_least "$iperf_parallel" 1 1)"
+	[ "$iperf_enabled" = 1 ] || iperf_enabled=0
+	case "$iperf_direction" in download|upload) ;; *) iperf_direction=download ;; esac
+	[ -n "$iperf_server" ] || iperf_enabled=0
 
 	case "$storage_path" in
 		/*) ;;
@@ -82,7 +96,9 @@ load_settings() {
 	status_file="$RUNTIME_DIR/status.json"
 	bucket_file="$storage_path/minute-buckets.jsonl"
 	outage_file="$storage_path/outages.jsonl"
+	speed_file="$storage_path/speed-tests.jsonl"
 	pid_file="$RUNTIME_DIR/monitor.pid"
+	iperf_output="$RUNTIME_DIR/iperf3.json"
 
 	mkdir -p "$storage_path"
 	mkdir -p "$RUNTIME_DIR"
@@ -170,13 +186,40 @@ restore_history() {
 		[ "$last_outage_start" = 0 ] && last_outage_start=""
 		[ "$last_outage_end" = 0 ] && last_outage_end=""
 	fi
+
+	if [ -f "$speed_file" ]; then
+		summary="$(awk '
+			function field(name, line, value) {
+				value = line
+				sub("^.*\"" name "\":", "", value)
+				sub(/[,}].*$/, "", value)
+				return value
+			}
+			{
+				count++
+				bps = field("bits_per_second", $0) + 0
+				sum += bps
+				if (!has_min || bps < min) min = bps
+				if (!has_max || bps > max) max = bps
+				has_min = has_max = 1
+			}
+			END { printf "%d %.0f %.0f %.0f", count, sum, min, max }
+		' "$speed_file")"
+		set -- $summary
+		speed_test_count="${1:-0}"
+		speed_sum_bps="${2:-0}"
+		speed_min_bps="${3:-0}"
+		speed_max_bps="${4:-0}"
+	fi
 }
 
 resolve_device() {
 	device=""
+	bind_address=""
 
 	network_flush_cache
 	network_get_device device "$interface"
+	network_get_ipaddr bind_address "$interface"
 
 	if [ -z "$device" ]; then
 		device="$interface"
@@ -200,7 +243,7 @@ ping_once() {
 
 write_status() {
 	local tmp="$status_file.$$"
-	local ts iso outage_json last_start last_end stored_avg
+	local ts iso outage_json last_start last_end stored_avg speed_avg speed_last_json
 
 	ts="$(now)"
 	iso="$(iso_time)"
@@ -208,9 +251,17 @@ write_status() {
 	last_end=""
 	outage_json="null"
 	stored_avg="null"
+	speed_avg="null"
+	speed_last_json="null"
 
 	if [ "$stored_latency_count" -gt 0 ]; then
 		stored_avg="$(awk -v sum="$stored_latency_sum" -v count="$stored_latency_count" 'BEGIN { printf "%.3f", sum / count }')"
+	fi
+	if [ "$speed_test_count" -gt 0 ]; then
+		speed_avg="$(awk -v sum="$speed_sum_bps" -v count="$speed_test_count" 'BEGIN { printf "%.0f", sum / count }')"
+	fi
+	if [ -n "$last_speed_time" ]; then
+		speed_last_json="{\"timestamp\":$last_speed_time,\"bits_per_second\":$last_speed_bps,\"direction\":\"$(json_escape "$last_speed_direction")\"}"
 	fi
 
 	if [ -n "$last_outage_start" ]; then
@@ -235,6 +286,7 @@ write_status() {
   "longest_outage": $longest_outage,
   "total_downtime": $total_downtime,
   "all_time": {"min_latency_ms":$stored_min_latency,"avg_latency_ms":$stored_avg,"max_latency_ms":$stored_max_latency,"outages":$stored_outages},
+	"iperf": {"enabled":$iperf_enabled,"running":$iperf_running,"server":"$(json_escape "$iperf_server")","direction":"$(json_escape "$iperf_direction")","last_test":$speed_last_json,"all_time":{"tests":$speed_test_count,"min_bits_per_second":$speed_min_bps,"avg_bits_per_second":$speed_avg,"max_bits_per_second":$speed_max_bps}},
   "last_outage": $outage_json,
   "consecutive_failures": $consecutive_failures,
   "consecutive_successes": $consecutive_successes
@@ -310,7 +362,7 @@ prune_storage() {
 
 	cutoff=$(( $(now) - retention_days * 86400 ))
 
-	for file in "$bucket_file" "$outage_file"; do
+	for file in "$bucket_file" "$outage_file" "$speed_file"; do
 		[ -f "$file" ] || continue
 		tmp="$file.$$"
 		awk -v cutoff="$cutoff" '
@@ -404,7 +456,75 @@ probe_cycle() {
 	handle_result "$ok"
 }
 
+start_speed_test() {
+	local ts
+
+	[ "$iperf_enabled" = 1 ] || return 0
+	[ "$iperf_running" = 0 ] || return 0
+	ts="$(now)"
+	[ $((ts - last_iperf_start)) -ge "$iperf_interval" ] || return 0
+
+	resolve_device
+	rm -f "$iperf_output"
+	if [ "$iperf_direction" = download ]; then
+		if [ -n "$bind_address" ]; then
+			iperf3 -c "$iperf_server" -p "$iperf_port" -t "$iperf_duration" -P "$iperf_parallel" -R -B "$bind_address" -J > "$iperf_output" 2>/dev/null &
+		else
+			iperf3 -c "$iperf_server" -p "$iperf_port" -t "$iperf_duration" -P "$iperf_parallel" -R -J > "$iperf_output" 2>/dev/null &
+		fi
+	else
+		if [ -n "$bind_address" ]; then
+			iperf3 -c "$iperf_server" -p "$iperf_port" -t "$iperf_duration" -P "$iperf_parallel" -B "$bind_address" -J > "$iperf_output" 2>/dev/null &
+		else
+			iperf3 -c "$iperf_server" -p "$iperf_port" -t "$iperf_duration" -P "$iperf_parallel" -J > "$iperf_output" 2>/dev/null &
+		fi
+	fi
+	iperf_pid=$!
+	iperf_running=1
+	last_iperf_start="$ts"
+	log "started $iperf_direction speed test to $iperf_server:$iperf_port"
+}
+
+finish_speed_test() {
+	local bps ts
+
+	[ "$iperf_running" = 1 ] || return 0
+	if kill -0 "$iperf_pid" 2>/dev/null; then
+		return 0
+	fi
+	wait "$iperf_pid" 2>/dev/null
+	iperf_running=0
+
+	if [ "$iperf_direction" = download ]; then
+		bps="$(jsonfilter -i "$iperf_output" -e '@.end.sum_received.bits_per_second' 2>/dev/null)"
+	else
+		bps="$(jsonfilter -i "$iperf_output" -e '@.end.sum_sent.bits_per_second' 2>/dev/null)"
+	fi
+	case "$bps" in ''|*[!0-9.]*) log "speed test failed"; rm -f "$iperf_output"; return 0 ;; esac
+
+	ts="$(now)"
+	bps="$(awk -v value="$bps" 'BEGIN { printf "%.0f", value }')"
+	printf '{"start":%s,"end":%s,"server":"%s","port":%s,"direction":"%s","duration":%s,"parallel":%s,"bits_per_second":%s}\n' \
+		"$last_iperf_start" "$ts" "$(json_escape "$iperf_server")" "$iperf_port" \
+		"$iperf_direction" "$iperf_duration" "$iperf_parallel" "$bps" >> "$speed_file"
+
+	last_speed_time="$ts"
+	last_speed_bps="$bps"
+	last_speed_direction="$iperf_direction"
+	speed_test_count=$((speed_test_count + 1))
+	speed_sum_bps="$(awk -v sum="$speed_sum_bps" -v add="$bps" 'BEGIN { printf "%.0f", sum + add }')"
+	if [ "$speed_test_count" -eq 1 ] || awk -v a="$bps" -v b="$speed_min_bps" 'BEGIN { exit !(a < b) }'; then speed_min_bps="$bps"; fi
+	if [ "$speed_test_count" -eq 1 ] || awk -v a="$bps" -v b="$speed_max_bps" 'BEGIN { exit !(a > b) }'; then speed_max_bps="$bps"; fi
+	rm -f "$iperf_output"
+	log "completed $iperf_direction speed test at $bps bits/s"
+}
+
 stop_monitor() {
+	if [ "$iperf_running" = 1 ]; then
+		kill "$iperf_pid" 2>/dev/null
+		wait "$iperf_pid" 2>/dev/null
+	fi
+	rm -f "$iperf_output"
 	flush_bucket
 	state="stopped"
 	current_latency="null"
@@ -438,6 +558,16 @@ main() {
 	last_outage_duration=0
 	outage_start=""
 	first_failure_time=""
+	iperf_running=0
+	iperf_pid=""
+	last_iperf_start=0
+	last_speed_time=""
+	last_speed_bps=0
+	last_speed_direction="$iperf_direction"
+	speed_test_count=0
+	speed_sum_bps=0
+	speed_min_bps=0
+	speed_max_bps=0
 
 	bucket_start="$(now)"
 	bucket_probes=0
@@ -457,6 +587,8 @@ main() {
 
 	while :; do
 		probe_cycle
+		finish_speed_test
+		start_speed_test
 		write_status
 
 		if [ $(( $(now) - last_flush )) -ge "$flush_seconds" ]; then
@@ -471,6 +603,10 @@ main() {
 			stored_min_latency="null"
 			stored_max_latency="null"
 			stored_outages=0
+			speed_test_count=0
+			speed_sum_bps=0
+			speed_min_bps=0
+			speed_max_bps=0
 			restore_history
 			write_status
 			last_prune="$(now)"

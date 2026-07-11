@@ -8,6 +8,35 @@ function fmtLatency(value) {
 	return value == null || !isFinite(value) ? '-' : '%.1f ms'.format(Number(value));
 }
 
+function fmtSpeed(value) {
+	var bps = Number(value);
+
+	if (!isFinite(bps) || bps <= 0)
+		return '-';
+	if (bps >= 1000000000)
+		return '%.2f Gbit/s'.format(bps / 1000000000);
+
+	return '%.1f Mbit/s'.format(bps / 1000000);
+}
+
+function summarizeSpeed(tests) {
+	var result = { tests: tests.length, min: null, max: null, sum: 0 };
+
+	for (var i = 0; i < tests.length; i++) {
+		var value = Number(tests[i].bits_per_second);
+
+		if (!isFinite(value))
+			continue;
+		result.sum += value;
+		if (result.min == null || value < result.min)
+			result.min = value;
+		if (result.max == null || value > result.max)
+			result.max = value;
+	}
+	result.avg = result.tests ? result.sum / result.tests : null;
+	return result;
+}
+
 function fmtTime(timestamp, includeDate) {
 	var date = new Date(Number(timestamp) * 1000);
 
@@ -182,8 +211,12 @@ return view.extend({
 		var root = E('div', { 'class': 'stability-monitor-root' + (animate === false ? ' stability-monitor-no-animation' : '') });
 		var status = data.status || {};
 		var buckets = data.buckets || [];
+		var speedTests = data.speed_tests || [];
 		var now = Number(status.timestamp || Math.floor(Date.now() / 1000));
 		var allTime = status.all_time || summarize(buckets);
+		var iperf = status.iperf || {};
+		var speedAllTime = iperf.all_time || summarizeSpeed(speedTests);
+		var lastSpeed = iperf.last_test || (speedTests.length ? speedTests[speedTests.length - 1] : null);
 		var style = E('style', {}, [
 			'.stability-monitor-root{display:flex;flex-direction:column;gap:14px}',
 			'.stability-monitor-actions{display:flex;justify-content:flex-end}',
@@ -245,6 +278,18 @@ return view.extend({
 				stat(_('Outages'), allTime.outages)
 			])
 		]));
+		root.appendChild(E('section', { 'class': 'stability-monitor-card' }, [
+			E('h3', { 'class': 'stability-monitor-stats-title' }, _('iperf3 speed tests')),
+			E('div', { 'class': 'stability-monitor-stats' }, [
+				stat(_('Latest'), lastSpeed ? fmtSpeed(lastSpeed.bits_per_second) : (iperf.running ? _('Running…') : '-')),
+				stat(_('Minimum'), fmtSpeed(speedAllTime.min_bits_per_second != null ? speedAllTime.min_bits_per_second : speedAllTime.min)),
+				stat(_('Average'), fmtSpeed(speedAllTime.avg_bits_per_second != null ? speedAllTime.avg_bits_per_second : speedAllTime.avg)),
+				stat(_('Maximum'), fmtSpeed(speedAllTime.max_bits_per_second != null ? speedAllTime.max_bits_per_second : speedAllTime.max))
+			]),
+			E('p', { 'class': 'stability-monitor-meta' }, iperf.enabled
+				? _('%d stored tests · %s · server %s').format(Number(speedAllTime.tests || 0), iperf.direction || '-', iperf.server || '-')
+				: _('Speed tests are disabled in Settings.'))
+		]));
 
 		return root;
 	},
@@ -252,14 +297,14 @@ return view.extend({
 	resetStats: function(ev) {
 		var button = ev && ev.currentTarget;
 
-		if (!window.confirm(_('Reset all WAN ping statistics and restart the monitor?')))
+		if (!window.confirm(_('Reset all ping and iperf3 statistics and restart the monitor?')))
 			return Promise.resolve();
 
 		if (button)
 			button.disabled = true;
 
 		return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'reset' ]).then(function() {
-			ui.addNotification(null, E('p', {}, _('WAN ping statistics were reset.')), 'info');
+			ui.addNotification(null, E('p', {}, _('Ping and iperf3 statistics were reset.')), 'info');
 			return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'json' ]);
 		}).then(function(res) {
 			var current = document.querySelector('.stability-monitor-root');
@@ -268,7 +313,7 @@ return view.extend({
 			if (current && current.parentNode)
 				current.parentNode.replaceChild(replacement, current);
 		}.bind(this)).catch(function(err) {
-			ui.addNotification(null, E('p', {}, _('Failed to reset WAN ping statistics: %s').format(err && err.message ? err.message : err)), 'danger');
+			ui.addNotification(null, E('p', {}, _('Failed to reset statistics: %s').format(err && err.message ? err.message : err)), 'danger');
 
 			if (button)
 				button.disabled = false;
