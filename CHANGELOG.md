@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/bd-dm/openwrt-stability-monitor/compare/stability-monitor-v0.3.0...stability-monitor-v0.4.0) (2026-07-11)
+
+
+### Features
+
+* add periodic iperf3 speed tests ([#6](https://github.com/bd-dm/openwrt-stability-monitor/issues/6)) ([17847e6](https://github.com/bd-dm/openwrt-stability-monitor/commit/17847e6a266358724a61054f3ad12bda2113b4d0))
+
 ## [0.3.0](https://github.com/bd-dm/openwrt-stability-monitor/compare/stability-monitor-v0.2.0...stability-monitor-v0.3.0) (2026-07-11)
 
 
