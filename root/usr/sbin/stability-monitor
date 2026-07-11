@@ -188,7 +188,7 @@ restore_history() {
 	fi
 
 	if [ -f "$speed_file" ]; then
-		summary="$(awk '
+		summary="$(awk -v server="$iperf_server" -v direction="$iperf_direction" '
 			function field(name, line, value) {
 				value = line
 				sub("^.*\"" name "\":", "", value)
@@ -196,6 +196,10 @@ restore_history() {
 				return value
 			}
 			{
+				if (index($0, "\"server\":\"" server "\"") == 0 ||
+				    index($0, "\"direction\":\"" direction "\"") == 0 ||
+				    index($0, "\"success\":false") > 0)
+					next
 				count++
 				bps = field("bits_per_second", $0) + 0
 				sum += bps
@@ -286,7 +290,7 @@ write_status() {
   "longest_outage": $longest_outage,
   "total_downtime": $total_downtime,
   "all_time": {"min_latency_ms":$stored_min_latency,"avg_latency_ms":$stored_avg,"max_latency_ms":$stored_max_latency,"outages":$stored_outages},
-	"iperf": {"enabled":$iperf_enabled,"running":$iperf_running,"server":"$(json_escape "$iperf_server")","direction":"$(json_escape "$iperf_direction")","last_test":$speed_last_json,"all_time":{"tests":$speed_test_count,"min_bits_per_second":$speed_min_bps,"avg_bits_per_second":$speed_avg,"max_bits_per_second":$speed_max_bps}},
+	"iperf": {"enabled":$iperf_enabled,"running":$iperf_running,"server":"$(json_escape "$iperf_server")","direction":"$(json_escape "$iperf_direction")","interval":$iperf_interval,"last_test":$speed_last_json,"all_time":{"tests":$speed_test_count,"min_bits_per_second":$speed_min_bps,"avg_bits_per_second":$speed_avg,"max_bits_per_second":$speed_max_bps}},
   "last_outage": $outage_json,
   "consecutive_failures": $consecutive_failures,
   "consecutive_successes": $consecutive_successes
@@ -500,11 +504,21 @@ finish_speed_test() {
 	else
 		bps="$(jsonfilter -i "$iperf_output" -e '@.end.sum_sent.bits_per_second' 2>/dev/null)"
 	fi
-	case "$bps" in ''|*[!0-9.]*) log "speed test failed"; rm -f "$iperf_output"; return 0 ;; esac
+	case "$bps" in
+		''|*[!0-9.]*)
+			ts="$(now)"
+			printf '{"start":%s,"end":%s,"server":"%s","port":%s,"direction":"%s","duration":%s,"parallel":%s,"success":false,"bits_per_second":null}\n' \
+				"$last_iperf_start" "$ts" "$(json_escape "$iperf_server")" "$iperf_port" \
+				"$iperf_direction" "$iperf_duration" "$iperf_parallel" >> "$speed_file"
+			log "speed test failed"
+			rm -f "$iperf_output"
+			return 0
+			;;
+	esac
 
 	ts="$(now)"
 	bps="$(awk -v value="$bps" 'BEGIN { printf "%.0f", value }')"
-	printf '{"start":%s,"end":%s,"server":"%s","port":%s,"direction":"%s","duration":%s,"parallel":%s,"bits_per_second":%s}\n' \
+	printf '{"start":%s,"end":%s,"server":"%s","port":%s,"direction":"%s","duration":%s,"parallel":%s,"success":true,"bits_per_second":%s}\n' \
 		"$last_iperf_start" "$ts" "$(json_escape "$iperf_server")" "$iperf_port" \
 		"$iperf_direction" "$iperf_duration" "$iperf_parallel" "$bps" >> "$speed_file"
 

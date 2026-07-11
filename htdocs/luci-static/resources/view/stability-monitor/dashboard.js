@@ -20,13 +20,17 @@ function fmtSpeed(value) {
 }
 
 function summarizeSpeed(tests) {
-	var result = { tests: tests.length, min: null, max: null, sum: 0 };
+	var result = { tests: 0, min: null, max: null, sum: 0 };
 
 	for (var i = 0; i < tests.length; i++) {
-		var value = Number(tests[i].bits_per_second);
+		var value;
 
+		if (tests[i].success === false || tests[i].bits_per_second == null)
+			continue;
+		value = Number(tests[i].bits_per_second);
 		if (!isFinite(value))
 			continue;
+		result.tests++;
 		result.sum += value;
 		if (result.min == null || value < result.min)
 			result.min = value;
@@ -203,20 +207,41 @@ function chart(points, title, includeDate) {
 	]);
 }
 
-function speedChart(tests) {
-	var visible = tests.slice(-60);
-	var values = visible.map(function(test) { return Number(test.bits_per_second || 0); });
+function speedChart(tests, now, interval) {
+	var slots = 60;
+	var rangeStart = now - interval * slots;
+	var visible = [];
+	var values;
+
+	for (var i = 0; i < slots; i++)
+		visible.push({ start: rangeStart + i * interval, test: null });
+
+	for (var j = 0; j < tests.length; j++) {
+		var timestamp = Number(tests[j].start || tests[j].end || 0);
+		var index = Math.floor((timestamp - rangeStart) / interval);
+
+		if (index >= 0 && index < slots)
+			visible[index].test = tests[j];
+	}
+
+	values = visible.filter(function(slot) {
+		return slot.test && slot.test.success !== false && slot.test.bits_per_second != null;
+	}).map(function(slot) { return Number(slot.test.bits_per_second); });
 	var max = values.length ? Math.max.apply(Math, values) : 0;
-	var bars = visible.map(function(test, index) {
-		var value = Number(test.bits_per_second || 0);
-		var label = _('%s — %s — %s').format(
-			fmtTime(test.end || test.start, true),
-			test.direction || '-',
-			fmtSpeed(value)
-		);
+	var bars = visible.map(function(slot, index) {
+		var test = slot.test;
+		var failed = test && test.success === false;
+		var value = test && test.bits_per_second != null ? Number(test.bits_per_second) : 0;
+		var label = !test ? _('%s — No test').format(fmtTime(slot.start, true))
+			: failed ? _('%s — Test failed').format(fmtTime(test.end || test.start, true))
+				: _('%s — %s').format(fmtTime(test.end || test.start, true), fmtSpeed(value));
 
 		return E('i', {
-			'style': '--bar-height:%.2f%%;--bar-color:#3478d4;--bar-delay:%dms'.format(max > 0 ? Math.max(8, value / max * 100) : 2, index * 12),
+			'style': '--bar-height:%.2f%%;--bar-color:%s;--bar-delay:%dms'.format(
+				failed ? 35 : test && max > 0 ? Math.max(8, value / max * 100) : 2,
+				failed ? '#d43b32' : test ? '#3478d4' : '#a0a7b2',
+				index * 12
+			),
 			'aria-label': label,
 			'data-tooltip': label
 		});
@@ -225,14 +250,14 @@ function speedChart(tests) {
 	return E('div', { 'class': 'stability-monitor-speed-chart' }, [
 		E('div', { 'class': 'stability-monitor-chart-heading' }, [
 			E('h3', {}, _('Speed test history')),
-			E('span', {}, _('latest 60 stored tests'))
+			E('span', {}, _('blue: result · red: failed · gray: no test'))
 		]),
-		visible.length
+		tests.length
 			? E('div', { 'class': 'stability-monitor-chart-plot' }, bars)
 			: E('div', { 'class': 'stability-monitor-chart-empty' }, _('No speed test results yet.')),
-		visible.length ? E('div', { 'class': 'stability-monitor-chart-axis' }, [
-			E('span', {}, fmtTime(visible[0].end || visible[0].start, true)),
-			E('span', {}, fmtTime(visible[visible.length - 1].end || visible[visible.length - 1].start, true))
+		tests.length ? E('div', { 'class': 'stability-monitor-chart-axis' }, [
+			E('span', {}, fmtTime(rangeStart, true)),
+			E('span', {}, _('now'))
 		]) : ''
 	]);
 }
@@ -254,8 +279,18 @@ return view.extend({
 		var now = Number(status.timestamp || Math.floor(Date.now() / 1000));
 		var allTime = status.all_time || summarize(buckets);
 		var iperf = status.iperf || {};
-		var speedAllTime = iperf.all_time || summarizeSpeed(speedTests);
-		var lastSpeed = iperf.last_test || (speedTests.length ? speedTests[speedTests.length - 1] : null);
+		var currentSpeedTests = speedTests.filter(function(test) {
+			return (!iperf.server || test.server === iperf.server) && (!iperf.direction || test.direction === iperf.direction);
+		});
+		var speedAllTime = iperf.all_time || summarizeSpeed(currentSpeedTests);
+		var lastSpeed = iperf.last_test;
+
+		if (!lastSpeed)
+			for (var i = currentSpeedTests.length - 1; i >= 0; i--)
+				if (currentSpeedTests[i].success !== false && currentSpeedTests[i].bits_per_second != null) {
+					lastSpeed = currentSpeedTests[i];
+					break;
+				}
 		var style = E('style', {}, [
 			'.stability-monitor-root{display:flex;flex-direction:column;gap:14px;margin-bottom:1.5em}',
 			'.stability-monitor-actions{display:flex;justify-content:flex-end}',
@@ -330,7 +365,7 @@ return view.extend({
 			E('p', { 'class': 'stability-monitor-meta' }, iperf.enabled
 				? _('%d stored tests · %s · server %s').format(Number(speedAllTime.tests || 0), iperf.direction || '-', iperf.server || '-')
 				: _('Speed tests are disabled in Settings.')),
-			speedChart(speedTests)
+			speedChart(currentSpeedTests, now, Math.max(60, Number(iperf.interval || 3600)))
 		]));
 
 		return root;
