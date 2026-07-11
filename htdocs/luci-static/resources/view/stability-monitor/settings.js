@@ -7,7 +7,7 @@ return view.extend({
 	render: function() {
 		var m, s, o;
 
-		m = new form.Map('wanping', _('WAN Ping Monitor'));
+		m = new form.Map('stability-monitor', _('Stability Monitor'));
 		m.description = _('Configure IPv4 connectivity monitoring through one selected OpenWrt network interface.');
 
 		s = m.section(form.NamedSection, 'monitor', 'monitor', _('Monitoring'));
@@ -59,7 +59,7 @@ return view.extend({
 
 		o = s.option(form.Value, 'storage_path', _('Storage path'));
 		o.datatype = 'directory';
-		o.default = '/etc/wanping';
+		o.default = '/etc/stability-monitor';
 
 		return m.render();
 	}

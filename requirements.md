@@ -1,4 +1,4 @@
-# OpenWrt LuCI WAN Ping Monitor Requirements
+# OpenWrt LuCI Stability Monitor Requirements
 
 ## Purpose
 

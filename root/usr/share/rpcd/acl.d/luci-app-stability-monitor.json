@@ -1,0 +1,17 @@
+{
+	"luci-app-stability-monitor": {
+		"description": "Grant access to WAN ping monitor",
+		"read": {
+			"file": {
+				"/usr/sbin/stability-monitor-status": [ "exec" ]
+			},
+			"uci": [ "stability-monitor" ]
+		},
+		"write": {
+			"file": {
+				"/usr/sbin/stability-monitor-status": [ "exec" ]
+			},
+			"uci": [ "stability-monitor" ]
+		}
+	}
+}

@@ -63,16 +63,16 @@ function fmtTimestamp(value) {
 
 function statusClass(state) {
 	if (state === 'online')
-		return 'wanping-online';
+		return 'stability-monitor-online';
 	if (state === 'degraded')
-		return 'wanping-degraded';
+		return 'stability-monitor-degraded';
 
-	return 'wanping-offline';
+	return 'stability-monitor-offline';
 }
 
 function stat(label, value) {
-	return E('div', { 'class': 'wanping-stat' }, [
-		E('span', { 'class': 'wanping-stat-label' }, label),
+	return E('div', { 'class': 'stability-monitor-stat' }, [
+		E('span', { 'class': 'stability-monitor-stat-label' }, label),
 		E('strong', {}, value)
 	]);
 }
@@ -104,22 +104,22 @@ function chart(values, color, suffix) {
 		}));
 	}
 
-	return E('div', { 'class': 'wanping-chart' }, [
-		E('div', { 'class': 'wanping-chart-wrap' }, [
-			E('div', { 'class': 'wanping-chart-yaxis' }, [
+	return E('div', { 'class': 'stability-monitor-chart' }, [
+		E('div', { 'class': 'stability-monitor-chart-wrap' }, [
+			E('div', { 'class': 'stability-monitor-chart-yaxis' }, [
 				E('span', {}, fmtAxisValue(max, suffix)),
 				E('span', {}, fmtAxisValue(max / 2, suffix)),
 				E('span', {}, fmtAxisValue(0, suffix))
 			]),
-			E('div', { 'class': 'wanping-chart-main' }, [
-				E('div', { 'class': 'wanping-chart-plot' }, bars.length ? bars : [ E('em', {}, _('No data')) ]),
-				E('div', { 'class': 'wanping-chart-xaxis' }, [
+			E('div', { 'class': 'stability-monitor-chart-main' }, [
+				E('div', { 'class': 'stability-monitor-chart-plot' }, bars.length ? bars : [ E('em', {}, _('No data')) ]),
+				E('div', { 'class': 'stability-monitor-chart-xaxis' }, [
 					E('span', {}, _('older')),
 					E('span', {}, _('now'))
 				])
 			])
 		]),
-		E('span', { 'class': 'wanping-chart-peak' }, clean.length ? _('Peak %s%s').format(max.toFixed(1), suffix) : _('No data'))
+		E('span', { 'class': 'stability-monitor-chart-peak' }, clean.length ? _('Peak %s%s').format(max.toFixed(1), suffix) : _('No data'))
 	]);
 }
 
@@ -167,7 +167,7 @@ function summarizeBuckets(buckets, since) {
 
 return view.extend({
 	load: function() {
-		return fs.exec_direct('/usr/sbin/wanping-status', [ 'json' ]).then(function(res) {
+		return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'json' ]).then(function(res) {
 			return JSON.parse(res || '{}');
 		}).catch(function() {
 			return { status: { state: 'stopped' }, buckets: [], outages: [] };
@@ -175,35 +175,35 @@ return view.extend({
 	},
 
 	buildDashboard: function(data) {
-		var root = E('div', { 'class': 'wanping-root' });
+		var root = E('div', { 'class': 'stability-monitor-root' });
 		var style = E('style', {}, [
-			'.wanping-root{display:flex;flex-direction:column;gap:18px}',
-			'.wanping-actions{display:flex;justify-content:flex-end;gap:8px}',
-			'.wanping-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:stretch}',
-			'.wanping-panel,.wanping-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:16px;min-width:0;overflow:hidden}',
-			'.wanping-state{display:flex;align-items:center;gap:12px;margin-bottom:14px}',
-			'.wanping-dot{width:14px;height:14px;border-radius:50%;background:#888;box-shadow:0 0 0 5px rgba(0,0,0,.06)}',
-			'.wanping-online .wanping-dot{background:#149650}.wanping-degraded .wanping-dot{background:#c78a05}.wanping-offline .wanping-dot{background:#c3352b}',
-			'.wanping-state strong{font-size:22px;text-transform:capitalize}',
-			'.wanping-meta{color:var(--text-color-medium,#666);margin:0}',
-			'.wanping-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(145px,100%),1fr));gap:10px;min-width:0}',
-			'.wanping-stat{border-top:3px solid #4c6fff;background:var(--background-color-low,#f6f6f6);border-radius:6px;padding:12px;min-height:70px;min-width:0}',
-			'.wanping-stat-label{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-bottom:8px}',
-			'.wanping-stat strong{display:block;font-size:20px;line-height:1.2;overflow-wrap:anywhere}',
-			'.wanping-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}',
-			'.wanping-chart-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:stretch}',
-			'.wanping-chart-yaxis{display:flex;flex-direction:column;justify-content:space-between;min-width:54px;height:160px;color:var(--text-color-medium,#666);font-size:11px;text-align:right}',
-			'.wanping-chart-main{min-width:0}',
-			'.wanping-chart-plot{position:relative;display:flex;align-items:flex-end;gap:2px;width:100%;height:160px;padding:10px;background:linear-gradient(180deg,rgba(76,111,255,.08),rgba(76,111,255,.02));border-radius:6px;box-sizing:border-box;overflow:hidden}',
-			'.wanping-chart-plot:before{content:"";position:absolute;inset:10px;background:linear-gradient(to bottom,transparent 0,transparent calc(50% - 1px),rgba(128,128,128,.25) 50%,transparent calc(50% + 1px),transparent 100%),linear-gradient(to top,rgba(128,128,128,.28),rgba(128,128,128,.28) 1px,transparent 1px);pointer-events:none}',
-			'.wanping-chart-plot i{position:relative;z-index:1;display:block;flex:1 1 2px;min-width:2px;border-radius:2px 2px 0 0;opacity:.9}',
-			'.wanping-chart-plot em{align-self:center;margin:auto;color:var(--text-color-medium,#666);font-style:normal}',
-			'.wanping-chart-xaxis{display:flex;justify-content:space-between;color:var(--text-color-medium,#666);font-size:11px;margin-top:4px}',
-			'.wanping-chart-peak{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-top:8px}',
-			'.wanping-history{width:100%;border-collapse:collapse}',
-			'.wanping-history th,.wanping-history td{padding:10px;border-bottom:1px solid var(--border-color-low,#eee);text-align:left}',
-			'@media(max-width:900px){.wanping-hero,.wanping-grid{grid-template-columns:1fr}}',
-			'@media(max-width:520px){.wanping-stats{grid-template-columns:1fr}}'
+			'.stability-monitor-root{display:flex;flex-direction:column;gap:18px}',
+			'.stability-monitor-actions{display:flex;justify-content:flex-end;gap:8px}',
+			'.stability-monitor-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:stretch}',
+			'.stability-monitor-panel,.stability-monitor-card{border:1px solid var(--border-color-medium,#d8d8d8);border-radius:8px;background:var(--background-color-high,#fff);padding:16px;min-width:0;overflow:hidden}',
+			'.stability-monitor-state{display:flex;align-items:center;gap:12px;margin-bottom:14px}',
+			'.stability-monitor-dot{width:14px;height:14px;border-radius:50%;background:#888;box-shadow:0 0 0 5px rgba(0,0,0,.06)}',
+			'.stability-monitor-online .stability-monitor-dot{background:#149650}.stability-monitor-degraded .stability-monitor-dot{background:#c78a05}.stability-monitor-offline .stability-monitor-dot{background:#c3352b}',
+			'.stability-monitor-state strong{font-size:22px;text-transform:capitalize}',
+			'.stability-monitor-meta{color:var(--text-color-medium,#666);margin:0}',
+			'.stability-monitor-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(145px,100%),1fr));gap:10px;min-width:0}',
+			'.stability-monitor-stat{border-top:3px solid #4c6fff;background:var(--background-color-low,#f6f6f6);border-radius:6px;padding:12px;min-height:70px;min-width:0}',
+			'.stability-monitor-stat-label{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-bottom:8px}',
+			'.stability-monitor-stat strong{display:block;font-size:20px;line-height:1.2;overflow-wrap:anywhere}',
+			'.stability-monitor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}',
+			'.stability-monitor-chart-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:stretch}',
+			'.stability-monitor-chart-yaxis{display:flex;flex-direction:column;justify-content:space-between;min-width:54px;height:160px;color:var(--text-color-medium,#666);font-size:11px;text-align:right}',
+			'.stability-monitor-chart-main{min-width:0}',
+			'.stability-monitor-chart-plot{position:relative;display:flex;align-items:flex-end;gap:2px;width:100%;height:160px;padding:10px;background:linear-gradient(180deg,rgba(76,111,255,.08),rgba(76,111,255,.02));border-radius:6px;box-sizing:border-box;overflow:hidden}',
+			'.stability-monitor-chart-plot:before{content:"";position:absolute;inset:10px;background:linear-gradient(to bottom,transparent 0,transparent calc(50% - 1px),rgba(128,128,128,.25) 50%,transparent calc(50% + 1px),transparent 100%),linear-gradient(to top,rgba(128,128,128,.28),rgba(128,128,128,.28) 1px,transparent 1px);pointer-events:none}',
+			'.stability-monitor-chart-plot i{position:relative;z-index:1;display:block;flex:1 1 2px;min-width:2px;border-radius:2px 2px 0 0;opacity:.9}',
+			'.stability-monitor-chart-plot em{align-self:center;margin:auto;color:var(--text-color-medium,#666);font-style:normal}',
+			'.stability-monitor-chart-xaxis{display:flex;justify-content:space-between;color:var(--text-color-medium,#666);font-size:11px;margin-top:4px}',
+			'.stability-monitor-chart-peak{display:block;color:var(--text-color-medium,#666);font-size:12px;margin-top:8px}',
+			'.stability-monitor-history{width:100%;border-collapse:collapse}',
+			'.stability-monitor-history th,.stability-monitor-history td{padding:10px;border-bottom:1px solid var(--border-color-low,#eee);text-align:left}',
+			'@media(max-width:900px){.stability-monitor-hero,.stability-monitor-grid{grid-template-columns:1fr}}',
+			'@media(max-width:520px){.stability-monitor-stats{grid-template-columns:1fr}}'
 		].join(''));
 		var status = data.status || {};
 		var buckets = data.buckets || [];
@@ -220,31 +220,31 @@ return view.extend({
 		var lossValues = buckets.slice(-120).map(function(b) { return Number(b.loss_percent || 0); });
 
 		root.appendChild(style);
-		root.appendChild(E('div', { 'class': 'wanping-actions' }, [
+		root.appendChild(E('div', { 'class': 'stability-monitor-actions' }, [
 			E('button', {
 				'class': 'btn cbi-button cbi-button-reset',
 				'click': this.resetStats.bind(this)
 			}, _('Reset stats'))
 		]));
-		root.appendChild(E('div', { 'class': 'wanping-hero' }, [
-			E('div', { 'class': 'wanping-panel' }, [
-				E('div', { 'class': 'wanping-state ' + statusClass(status.state) }, [
-					E('span', { 'class': 'wanping-dot' }),
+		root.appendChild(E('div', { 'class': 'stability-monitor-hero' }, [
+			E('div', { 'class': 'stability-monitor-panel' }, [
+				E('div', { 'class': 'stability-monitor-state ' + statusClass(status.state) }, [
+					E('span', { 'class': 'stability-monitor-dot' }),
 					E('div', {}, [
 						E('strong', {}, status.state || _('stopped')),
-						E('p', { 'class': 'wanping-meta' }, _('Interface %s via %s').format(status.interface || '-', status.device || '-'))
+						E('p', { 'class': 'stability-monitor-meta' }, _('Interface %s via %s').format(status.interface || '-', status.device || '-'))
 					])
 				]),
-				E('div', { 'class': 'wanping-stats' }, [
+				E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('Current latency'), fmtLatency(status.current_latency_ms)),
 					stat(_('Recent loss'), '%.2f%%'.format(Number(status.recent_loss_percent || 0))),
 					stat(_('Outages'), status.outage_count || 0),
 					stat(_('Total downtime'), fmtDuration(status.total_downtime))
 				])
 			]),
-			E('div', { 'class': 'wanping-panel' }, [
+			E('div', { 'class': 'stability-monitor-panel' }, [
 				E('h3', {}, _('Today')),
-				E('div', { 'class': 'wanping-stats' }, [
+				E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('Average latency'), fmtLatency(todaySummary.avgLatency)),
 					stat(_('Packet loss'), '%.2f%%'.format(todaySummary.loss)),
 					stat(_('Outages'), todaySummary.outages),
@@ -253,51 +253,51 @@ return view.extend({
 			])
 		]));
 
-		root.appendChild(E('div', { 'class': 'wanping-grid' }, [
-			E('div', { 'class': 'wanping-card' }, [
+		root.appendChild(E('div', { 'class': 'stability-monitor-grid' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Latency trend')),
 				chart(latencyValues, '#4c6fff', ' ms')
 			]),
-			E('div', { 'class': 'wanping-card' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Packet loss trend')),
 				chart(lossValues, '#c3352b', '%')
 			])
 		]));
 
-		root.appendChild(E('div', { 'class': 'wanping-grid' }, [
-			E('div', { 'class': 'wanping-card' }, [
+		root.appendChild(E('div', { 'class': 'stability-monitor-grid' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Last hour')),
-				E('div', { 'class': 'wanping-stats' }, [
+				E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('Average latency'), fmtLatency(lastHour.avgLatency)),
 					stat(_('Minimum latency'), fmtLatency(lastHour.minLatency)),
 					stat(_('Maximum latency'), fmtLatency(lastHour.maxLatency)),
 					stat(_('Packet loss'), '%.2f%%'.format(lastHour.loss))
 				])
 			]),
-			E('div', { 'class': 'wanping-card' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Last outage')),
-				status.last_outage ? E('div', { 'class': 'wanping-stats' }, [
+				status.last_outage ? E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('Started'), fmtTimestamp(status.last_outage.start || status.last_outage.start_iso)),
 					stat(_('Recovered'), fmtTimestamp(status.last_outage.end || status.last_outage.end_iso)),
 					stat(_('Duration'), fmtDuration(status.last_outage.duration)),
 					stat(_('Longest outage'), fmtDuration(status.longest_outage))
-				]) : E('p', { 'class': 'wanping-meta' }, _('No outage has been recorded yet.'))
+				]) : E('p', { 'class': 'stability-monitor-meta' }, _('No outage has been recorded yet.'))
 			])
 		]));
 
-		root.appendChild(E('div', { 'class': 'wanping-grid' }, [
-			E('div', { 'class': 'wanping-card' }, [
+		root.appendChild(E('div', { 'class': 'stability-monitor-grid' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Last 24 hours')),
-				E('div', { 'class': 'wanping-stats' }, [
+				E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('Packet loss'), '%.2f%%'.format(last24h.loss)),
 					stat(_('Outages'), last24h.outages),
 					stat(_('Downtime'), fmtDuration(last24h.downtime)),
 					stat(_('Average latency'), fmtLatency(last24h.avgLatency))
 				])
 			]),
-			E('div', { 'class': 'wanping-card' }, [
+			E('div', { 'class': 'stability-monitor-card' }, [
 				E('h3', {}, _('Longer history')),
-				E('div', { 'class': 'wanping-stats' }, [
+				E('div', { 'class': 'stability-monitor-stats' }, [
 					stat(_('7 day loss'), '%.2f%%'.format(last7d.loss)),
 					stat(_('7 day downtime'), fmtDuration(last7d.downtime)),
 					stat(_('30 day outages'), last30d.outages),
@@ -306,9 +306,9 @@ return view.extend({
 			])
 		]));
 
-		root.appendChild(E('div', { 'class': 'wanping-card' }, [
+		root.appendChild(E('div', { 'class': 'stability-monitor-card' }, [
 			E('h3', {}, _('Outage history')),
-			outages.length ? E('table', { 'class': 'wanping-history' }, [
+			outages.length ? E('table', { 'class': 'stability-monitor-history' }, [
 				E('tr', {}, [
 					E('th', {}, _('Start')),
 					E('th', {}, _('End')),
@@ -322,7 +322,7 @@ return view.extend({
 						E('td', {}, fmtDuration(o.duration)),
 						E('td', {}, o.interface || '-')
 					]);
-				}))) : E('p', { 'class': 'wanping-meta' }, _('No outage events in retained history.'))
+				}))) : E('p', { 'class': 'stability-monitor-meta' }, _('No outage events in retained history.'))
 		]));
 
 		return root;
@@ -337,12 +337,12 @@ return view.extend({
 		if (button)
 			button.disabled = true;
 
-		return fs.exec_direct('/usr/sbin/wanping-status', [ 'reset' ]).then(function() {
+		return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'reset' ]).then(function() {
 			ui.addNotification(null, E('p', {}, _('WAN ping statistics were reset.')), 'info');
 
-			return fs.exec_direct('/usr/sbin/wanping-status', [ 'json' ]);
+			return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'json' ]);
 		}).then(function(res) {
-			var current = document.querySelector('.wanping-root');
+			var current = document.querySelector('.stability-monitor-root');
 			var replacement = this.buildDashboard(JSON.parse(res || '{}'));
 
 			if (current && current.parentNode)
@@ -360,10 +360,10 @@ return view.extend({
 
 	render: function(data) {
 		poll.add(function() {
-			return fs.exec_direct('/usr/sbin/wanping-status', [ 'json' ]).then(function(res) {
+			return fs.exec_direct('/usr/sbin/stability-monitor-status', [ 'json' ]).then(function(res) {
 				return JSON.parse(res || '{}');
 			}).then(function(fresh) {
-				var current = document.querySelector('.wanping-root');
+				var current = document.querySelector('.stability-monitor-root');
 				var replacement = this.buildDashboard(fresh);
 
 				if (current && current.parentNode)

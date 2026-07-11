@@ -1,6 +1,6 @@
 # TODO
 
-1. Rename project from wanping to stability-monitor
+1. [x] Rename project from wanping to stability-monitor
 2. Make proper versioning
 3. Improve release build speed in a pipeline
 4. Add "Main" tab to the settings page

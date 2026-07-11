@@ -3,10 +3,10 @@
 . /lib/functions.sh
 . /lib/functions/network.sh
 
-APP="wanping"
+APP="stability-monitor"
 SECTION="monitor"
-DEFAULT_STORE="/etc/wanping"
-RUNTIME_DIR="/var/run/wanping"
+DEFAULT_STORE="/etc/stability-monitor"
+RUNTIME_DIR="/var/run/stability-monitor"
 
 log() {
 	logger -t "$APP" "$*"

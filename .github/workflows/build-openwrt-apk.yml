@@ -26,11 +26,11 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build luci-app-wanping for rockchip/armv8
+    name: Build luci-app-stability-monitor for rockchip/armv8
     runs-on: ubuntu-24.04
 
     env:
-      PACKAGE_NAME: luci-app-wanping
+      PACKAGE_NAME: luci-app-stability-monitor
       OPENWRT_VERSION: ${{ github.event.inputs.openwrt_version || '25.12.4' }}
       OPENWRT_TARGET: ${{ github.event.inputs.target || 'rockchip' }}
       OPENWRT_SUBTARGET: ${{ github.event.inputs.subtarget || 'armv8' }}

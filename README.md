@@ -1,4 +1,4 @@
-# OpenWrt WAN Ping Monitor
+# OpenWrt Stability Monitor
 
 LuCI application and background service for monitoring IPv4 WAN connectivity on
 OpenWrt. It continuously pings configured IPv4 targets through one selected
@@ -22,7 +22,7 @@ built with the matching OpenWrt SDK for the target platform.
 
 1. Open this repository on GitHub.
 2. Go to **Releases**.
-3. Download the latest `luci-app-wanping-*.apk` asset.
+3. Download the latest `luci-app-stability-monitor-*.apk` asset.
 
 The workflow also keeps a copy as a GitHub Actions artifact, but releases are
 the easiest place to download installable builds.
@@ -32,7 +32,7 @@ the easiest place to download installable builds.
 Copy the APK to the router:
 
 ```sh
-scp luci-app-wanping-*.apk root@192.168.1.1:/tmp/
+scp luci-app-stability-monitor-*.apk root@192.168.1.1:/tmp/
 ```
 
 SSH into the router:
@@ -44,7 +44,7 @@ ssh root@192.168.1.1
 Install the package:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wanping-*.apk
+apk add --allow-untrusted /tmp/luci-app-stability-monitor-*.apk
 ```
 
 Restart LuCI if the menu does not appear immediately:
@@ -68,7 +68,7 @@ asset, not from a signed OpenWrt package feed trusted by your router.
 For this package, install the downloaded local APK with:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wanping-*.apk
+apk add --allow-untrusted /tmp/luci-app-stability-monitor-*.apk
 ```
 
 Only use `--allow-untrusted` for APK files you intentionally downloaded from
@@ -79,13 +79,13 @@ this repository's releases or built yourself.
 After installation, open LuCI:
 
 ```text
-Status -> WAN Ping Monitor
+Status -> Stability Monitor
 ```
 
 The settings page is available at:
 
 ```text
-Status -> WAN Ping Monitor -> Settings
+Status -> Stability Monitor -> Settings
 ```
 
 Default configuration:
@@ -97,7 +97,7 @@ Default configuration:
 - Ping timeout: `1` second
 - Outage starts after: `3` consecutive failures
 - Recovery starts after: `3` consecutive successes
-- Storage path: `/etc/wanping`
+- Storage path: `/etc/stability-monitor`
 - Retention: `30` days
 
 The monitor sends IPv4 pings through the selected OpenWrt network interface.
@@ -106,40 +106,40 @@ for example `wan`, `pppoe-wan`, or another interface from your router config.
 
 ## Service Commands
 
-The background service is named `wanping`.
+The background service is named `stability-monitor`.
 
 Check status:
 
 ```sh
-/etc/init.d/wanping status
+/etc/init.d/stability-monitor status
 ```
 
 Start, stop, restart, or reload:
 
 ```sh
-/etc/init.d/wanping start
-/etc/init.d/wanping stop
-/etc/init.d/wanping restart
-/etc/init.d/wanping reload
+/etc/init.d/stability-monitor start
+/etc/init.d/stability-monitor stop
+/etc/init.d/stability-monitor restart
+/etc/init.d/stability-monitor reload
 ```
 
 Enable or disable startup on boot:
 
 ```sh
-/etc/init.d/wanping enable
-/etc/init.d/wanping disable
+/etc/init.d/stability-monitor enable
+/etc/init.d/stability-monitor disable
 ```
 
 Read current JSON status from the command line:
 
 ```sh
-wanping-status json
+stability-monitor-status json
 ```
 
 View service logs:
 
 ```sh
-logread -e wanping
+logread -e stability-monitor
 ```
 
 ## Configuration File
@@ -147,7 +147,7 @@ logread -e wanping
 The UCI config file is:
 
 ```text
-/etc/config/wanping
+/etc/config/stability-monitor
 ```
 
 Example:
@@ -162,20 +162,20 @@ config monitor 'monitor'
 	option fail_threshold '3'
 	option recovery_threshold '3'
 	option retention_days '30'
-	option storage_path '/etc/wanping'
+	option storage_path '/etc/stability-monitor'
 	option flush_seconds '60'
 ```
 
 After editing manually, reload the service:
 
 ```sh
-/etc/init.d/wanping reload
+/etc/init.d/stability-monitor reload
 ```
 
 ## Stored Data
 
 Persistent summary data is stored under the configured `storage_path`, which is
-`/etc/wanping` by default.
+`/etc/stability-monitor` by default.
 
 Files:
 
@@ -185,7 +185,7 @@ Files:
 Runtime status is stored under:
 
 ```text
-/var/run/wanping/status.json
+/var/run/stability-monitor/status.json
 ```
 
 ## Uninstall
@@ -193,11 +193,11 @@ Runtime status is stored under:
 Remove the package:
 
 ```sh
-apk del luci-app-wanping
+apk del luci-app-stability-monitor
 ```
 
 Remove retained monitoring data if you no longer need it:
 
 ```sh
-rm -rf /etc/wanping
+rm -rf /etc/stability-monitor
 ```

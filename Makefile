@@ -1,6 +1,6 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=luci-app-wanping
+PKG_NAME:=luci-app-stability-monitor
 PKG_VERSION:=0.1.0
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
@@ -11,14 +11,14 @@ LUCI_DEPENDS:=+luci-base +rpcd +busybox
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/conffiles
-/etc/config/wanping
+/etc/config/stability-monitor
 endef
 
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || {
-	/etc/init.d/wanping enable
-	/etc/init.d/wanping start
+	/etc/init.d/stability-monitor enable
+	/etc/init.d/stability-monitor start
 }
 exit 0
 endef

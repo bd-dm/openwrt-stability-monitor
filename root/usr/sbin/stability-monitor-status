@@ -2,10 +2,10 @@
 
 . /lib/functions.sh
 
-APP="wanping"
+APP="stability-monitor"
 SECTION="monitor"
-DEFAULT_STORE="/etc/wanping"
-RUNTIME_DIR="/var/run/wanping"
+DEFAULT_STORE="/etc/stability-monitor"
+RUNTIME_DIR="/var/run/stability-monitor"
 
 json_escape() {
 	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -70,9 +70,9 @@ reset_stats() {
 	outage_file="$path/outages.jsonl"
 	pid_file="$RUNTIME_DIR/monitor.pid"
 
-	/etc/init.d/wanping stop >/dev/null 2>&1
+	/etc/init.d/stability-monitor stop >/dev/null 2>&1
 	rm -f "$bucket_file" "$outage_file" "$status_file" "$pid_file"
-	/etc/init.d/wanping start >/dev/null 2>&1
+	/etc/init.d/stability-monitor start >/dev/null 2>&1
 
 	printf '{"ok":true}\n'
 }
@@ -85,7 +85,7 @@ case "$1" in
 		reset_stats
 		;;
 	*)
-		echo "usage: wanping-status json|reset" >&2
+		echo "usage: stability-monitor-status json|reset" >&2
 		exit 1
 		;;
 esac
